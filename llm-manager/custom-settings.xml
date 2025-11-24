@@ -1,0 +1,48 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                      http://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+  <!-- Use the user's custom local repository path -->
+  <localRepository>/Volumes/samsungssd/repo</localRepository>
+
+  <mirrors>
+    <!-- Mirror everything to Aliyun EXCEPT the spring repositories -->
+    <mirror>
+      <id>aliyunmaven</id>
+      <mirrorOf>*,!spring-milestones,!spring-snapshots</mirrorOf>
+      <name>阿里云公共仓库</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+
+  <profiles>
+    <profile>
+      <id>spring-repositories</id>
+      <repositories>
+        <repository>
+          <id>spring-milestones</id>
+          <name>Spring Milestones</name>
+          <url>https://repo.spring.io/milestone</url>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+          <id>spring-snapshots</id>
+          <name>Spring Snapshots</name>
+          <url>https://repo.spring.io/snapshot</url>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>spring-milestones</id>
+          <url>https://repo.spring.io/milestone</url>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+
+  <activeProfiles>
+    <activeProfile>spring-repositories</activeProfile>
+  </activeProfiles>
+</settings>

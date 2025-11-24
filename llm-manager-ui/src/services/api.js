@@ -1,0 +1,106 @@
+import axios from 'axios'
+import { streamFetch } from '@/utils/streamParser'
+
+const apiClient = axios.create({
+  baseURL: 'http://localhost:8080/api',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+
+apiClient.interceptors.request.use(config => {
+  const token = localStorage.getItem('satoken')
+  if (token) {
+    config.headers['satoken'] = token
+  }
+  return config
+})
+
+apiClient.interceptors.response.use(response => {
+    // Handle Sa-Token "soft" 401 errors (HTTP 200 but code=401 in body)
+    if (response.data && response.data.code === 401) {
+        localStorage.removeItem('satoken')
+        window.location.href = '/login'
+        return Promise.reject(new Error('Unauthorized'))
+    }
+    return response
+}, error => {
+    if (error.response && error.response.status === 401) {
+        localStorage.removeItem('satoken')
+        window.location.href = '/login'
+    }
+    return Promise.reject(error)
+})
+
+export default {
+  // Channels
+  getChannels() { return apiClient.get('/channels') },
+  createChannel(data) { return apiClient.post('/channels', data) },
+  updateChannel(id, data) { return apiClient.put(`/channels/${id}`, data) },
+  deleteChannel(id) { return apiClient.delete(`/channels/${id}`) },
+
+  // Models
+  getModels() { return apiClient.get('/models') },
+  createModel(data) { return apiClient.post('/models', data) },
+  updateModel(id, data) { return apiClient.put(`/models/${id}`, data) },
+  deleteModel(id) { return apiClient.delete(`/models/${id}`) },
+
+  // Agents
+  getAgents() { return apiClient.get('/agents') },
+  createAgent(data) { return apiClient.post('/agents', data) },
+  updateAgent(id, data) { return apiClient.put(`/agents/${id}`, data) },
+  deleteAgent(id) { return apiClient.delete(`/agents/${id}`) },
+
+  // Tokens
+  getTokens() { return apiClient.get('/tokens') },
+  createToken(data) { return apiClient.post('/tokens', data) },
+  revokeToken(id) { return apiClient.post(`/tokens/${id}/revoke`) },
+
+  // Chat - 阻塞式
+  chat(modelId, message) { return apiClient.post(`/chat/${modelId}`, message) },
+  chatWithAgent(slug, message, token) {
+      return axios.post(`http://localhost:8080/api/external/agents/${slug}/chat`, { message }, {
+          headers: { 'Authorization': `Bearer ${token}` }
+      })
+  },
+
+  // Chat - 流式
+  chatStream(modelId, message, onChunk, onComplete, onError) {
+    const token = localStorage.getItem('satoken')
+    const url = `http://localhost:8080/api/chat/${modelId}/stream`
+
+    return streamFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'satoken': token || ''
+        },
+        body: JSON.stringify(message)
+      },
+      onChunk,
+      onComplete,
+      onError
+    )
+  },
+
+  chatWithAgentStream(slug, message, token, onChunk, onComplete, onError) {
+    const url = `http://localhost:8080/api/external/agents/${slug}/chat/stream`
+
+    return streamFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message })
+      },
+      onChunk,
+      onComplete,
+      onError
+    )
+  }
+}

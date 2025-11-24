@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home)",
+      "Bash(java:*)",
+      "Bash(JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home /Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home/bin/java:*)",
+      "Bash(JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home mvn spring-boot:run:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(npm install:*)",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

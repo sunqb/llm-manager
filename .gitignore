@@ -1,0 +1,96 @@
+# ====================
+# Java / Maven / Spring Boot
+# ====================
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Maven
+llm-manager/target/
+llm-manager/.mvn/
+llm-manager/mvnw
+llm-manager/mvnw.cmd
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# IDE - Eclipse
+.project
+.classpath
+.settings/
+
+# IDE - VS Code
+.vscode/
+
+# ====================
+# Node / Vue / Frontend
+# ====================
+
+# Dependencies
+llm-manager-ui/node_modules/
+
+# Production build
+llm-manager-ui/dist/
+
+# Local env files
+llm-manager-ui/.env.local
+llm-manager-ui/.env.*.local
+
+# Log files
+llm-manager-ui/npm-debug.log*
+llm-manager-ui/yarn-debug.log*
+llm-manager-ui/yarn-error.log*
+llm-manager-ui/pnpm-debug.log*
+
+# Editor directories and files
+.DS_Store
+Thumbs.db
+
+# ====================
+# Application Specific
+# ====================
+
+# H2 Database files
+*.db
+*.mv.db
+*.trace.db
+
+# Application properties with sensitive data
+llm-manager/src/main/resources/application-prod.yml
+llm-manager/src/main/resources/application-secrets.yml
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ====================
+# Git
+# ====================
+*.orig

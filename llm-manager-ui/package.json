@@ -1,0 +1,25 @@
+{
+  "name": "llm-manager-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.22",
+    "axios": "^1.13.2",
+    "dompurify": "^3.3.0",
+    "marked": "^17.0.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.1",
+    "vue": "^3.5.24",
+    "vue-router": "^4.6.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.2.2"
+  }
+}
