@@ -94,3 +94,8 @@ Thumbs.db
 # Git
 # ====================
 *.orig
+
+# ====================
+# Claude Code
+# ====================
+.claude/settings.local.json
