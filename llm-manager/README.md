@@ -36,7 +36,12 @@ mvn spring-boot:run
 Ensure you have set up a Channel via API before chatting.
 
 ## Configuration
-Access H2 Console at `http://localhost:8080/h2-console`
-JDBC URL: `jdbc:h2:mem:llmmanager`
-User: `sa`
-Password: (empty)
+- Database: MySQL / TiDB (see `docs/MYSQL_SETUP.md`).
+- Default schema is created from `src/main/resources/schema.sql` on startup (`spring.sql.init.mode=always`).
+- Update `spring.datasource.*` in `src/main/resources/application.yml` to match your local credentials.
+- Configure AI provider credentials via environment variables:
+  - `OPENAI_API_KEY`
+  - `OPENAI_BASE_URL` (optional, defaults to `https://api.openai.com`)
+
+## Changelog
+- 2025-11-28: Migrated persistence from Spring Data JPA + H2 to MyBatis-Plus + MySQL/TiDB, added schema bootstrap and MySQL setup documentation.
