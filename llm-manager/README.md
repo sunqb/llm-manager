@@ -43,5 +43,5 @@ Ensure you have set up a Channel via API before chatting.
   - `OPENAI_API_KEY`
   - `OPENAI_BASE_URL` (optional, defaults to `https://api.openai.com`)
 
-## Changelog
-- 2025-11-28: Migrated persistence from Spring Data JPA + H2 to MyBatis-Plus + MySQL/TiDB, added schema bootstrap and MySQL setup documentation.
+## 更新日志
+- 2025-11-28：将持久层从 Spring Data JPA + H2 迁移为 MyBatis-Plus + MySQL/TiDB，新增启动时自动建表脚本 `schema.sql` 与数据库配置文档 `docs/MYSQL_SETUP.md`，并清理 `application.yml` 中的数据库账号密码（改为空字符串占位）。
