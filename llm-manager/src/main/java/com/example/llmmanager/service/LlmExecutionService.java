@@ -1,46 +1,75 @@
 package com.example.llmmanager.service;
 
 import com.example.llmmanager.entity.Agent;
+import com.example.llmmanager.entity.Channel;
 import com.example.llmmanager.entity.LlmModel;
 import com.example.llmmanager.repository.LlmModelRepository;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class LlmExecutionService {
 
     private final LlmModelRepository modelRepository;
-    private final ChatModelFactory chatModelFactory;
+    // 缓存已创建的 ChatModel，避免重复创建
+    private final Map<String, OpenAiChatModel> chatModelCache = new ConcurrentHashMap<>();
 
-    public LlmExecutionService(LlmModelRepository modelRepository, ChatModelFactory chatModelFactory) {
+    @Value("${spring.ai.openai.api-key:}")
+    private String defaultApiKey;
+
+    @Value("${spring.ai.openai.base-url:https://api.openai.com}")
+    private String defaultBaseUrl;
+
+    public LlmExecutionService(LlmModelRepository modelRepository) {
         this.modelRepository = modelRepository;
-        this.chatModelFactory = chatModelFactory;
+    }
+
+    /**
+     * 根据 Channel 配置动态创建 ChatClient
+     * 优先使用 Channel 配置，没有则使用默认配置
+     */
+    private ChatClient createChatClient(Channel channel) {
+        // 优先使用 Channel 配置，没有则使用默认配置
+        String apiKey = StringUtils.hasText(channel.getApiKey()) ? channel.getApiKey() : defaultApiKey;
+        String baseUrl = StringUtils.hasText(channel.getBaseUrl()) ? channel.getBaseUrl() : defaultBaseUrl;
+
+        String cacheKey = channel.getId() + "_" + apiKey + "_" + baseUrl;
+
+        OpenAiChatModel chatModel = chatModelCache.computeIfAbsent(cacheKey, k -> {
+            OpenAiApi openAiApi = OpenAiApi.builder()
+                    .baseUrl(baseUrl)
+                    .apiKey(apiKey)
+                    .build();
+
+            return OpenAiChatModel.builder()
+                    .openAiApi(openAiApi)
+                    .build();
+        });
+
+        return ChatClient.builder(chatModel).build();
     }
 
     public String chat(Long modelId, String userMessage) {
         LlmModel model = modelRepository.findById(modelId)
                 .orElseThrow(() -> new RuntimeException("Model not found"));
-        
+
         return executeRequest(model, userMessage, null);
     }
 
     public String chatWithAgent(Agent agent, String userMessage) {
         LlmModel model = agent.getLlmModel();
-        // Prefer agent temp override, else model default
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
-        
+
         return executeRequest(model, userMessage, agent.getSystemPrompt(), temp);
     }
 
@@ -49,23 +78,27 @@ public class LlmExecutionService {
     }
 
     private String executeRequest(LlmModel model, String userMessageStr, String systemPromptStr, Double temperature) {
-        ChatModel chatModel = chatModelFactory.createChatModel(model.getChannel());
+        Channel channel = model.getChannel();
+        if (channel == null) {
+            throw new RuntimeException("Model has no associated channel");
+        }
+
+        ChatClient chatClient = createChatClient(channel);
 
         OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .withModel(model.getModelIdentifier())
-                .withTemperature(temperature.floatValue()) // Convert Double to Float for Spring AI 1.0.0-M1
+                .model(model.getModelIdentifier())
+                .temperature(temperature)
                 .build();
 
-        List<Message> messages = new ArrayList<>();
+        var promptSpec = chatClient.prompt();
         if (systemPromptStr != null && !systemPromptStr.isEmpty()) {
-            messages.add(new SystemMessage(systemPromptStr));
+            promptSpec = promptSpec.system(systemPromptStr);
         }
-        messages.add(new UserMessage(userMessageStr));
-
-        Prompt prompt = new Prompt(messages, options);
-        ChatResponse response = chatModel.call(prompt);
-        
-        return response.getResult().getOutput().getContent();
+        return promptSpec
+                .user(userMessageStr)
+                .options(options)
+                .call()
+                .content();
     }
 
     public String chatWithTemplate(Long modelId, String templateContent, Map<String, Object> variables) {
@@ -75,52 +108,58 @@ public class LlmExecutionService {
     }
 
     // 流式聊天方法
-    public Flux<ChatResponse> streamChat(Long modelId, String userMessage) {
+    public Flux<String> streamChat(Long modelId, String userMessage) {
         LlmModel model = modelRepository.findById(modelId)
                 .orElseThrow(() -> new RuntimeException("Model not found"));
 
         return executeStreamRequest(model, userMessage, null);
     }
 
-    public Flux<ChatResponse> streamChatWithAgent(Agent agent, String userMessage) {
+    public Flux<String> streamChatWithAgent(Agent agent, String userMessage) {
         LlmModel model = agent.getLlmModel();
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
 
         return executeStreamRequest(model, userMessage, agent.getSystemPrompt(), temp);
     }
 
-    private Flux<ChatResponse> executeStreamRequest(LlmModel model, String userMessage, String systemPrompt) {
+    private Flux<String> executeStreamRequest(LlmModel model, String userMessage, String systemPrompt) {
         return executeStreamRequest(model, userMessage, systemPrompt, model.getTemperature());
     }
 
-    private Flux<ChatResponse> executeStreamRequest(LlmModel model, String userMessageStr, String systemPromptStr, Double temperature) {
-        ChatModel chatModel = chatModelFactory.createChatModel(model.getChannel());
+    private Flux<String> executeStreamRequest(LlmModel model, String userMessageStr, String systemPromptStr, Double temperature) {
+        Channel channel = model.getChannel();
+        if (channel == null) {
+            throw new RuntimeException("Model has no associated channel");
+        }
+
+        ChatClient chatClient = createChatClient(channel);
 
         OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .withModel(model.getModelIdentifier())
-                .withTemperature(temperature.floatValue())
+                .model(model.getModelIdentifier())
+                .temperature(temperature)
                 .build();
 
-        List<Message> messages = new ArrayList<>();
+        System.out.println("[LLM Stream] 开始流式请求: " + model.getModelIdentifier() + " via " + channel.getBaseUrl());
+
+        var promptSpec = chatClient.prompt();
         if (systemPromptStr != null && !systemPromptStr.isEmpty()) {
-            messages.add(new SystemMessage(systemPromptStr));
+            promptSpec = promptSpec.system(systemPromptStr);
         }
-        messages.add(new UserMessage(userMessageStr));
 
-        Prompt prompt = new Prompt(messages, options);
-
-        System.out.println("[LLM Stream] 开始流式请求: " + model.getModelIdentifier());
-
-        // 使用 stream 方法返回 Flux，并添加操作符确保实时推送
-        return chatModel.stream(prompt)
-                .doOnNext(response -> {
-                    if (response != null && response.getResult() != null) {
-                        System.out.println("[LLM Stream] 收到数据块");
-                    }
-                })
+        return promptSpec
+                .user(userMessageStr)
+                .options(options)
+                .stream()
+                .content()
+                .doOnNext(chunk -> System.out.println("[LLM Stream] 收到数据块"))
                 .doOnComplete(() -> System.out.println("[LLM Stream] 流式请求完成"))
                 .doOnError(error -> System.err.println("[LLM Stream] 错误: " + error.getMessage()));
     }
+
+    /**
+     * 清除指定 Channel 的缓存（当 Channel 配置更新时调用）
+     */
+    public void clearCacheForChannel(Long channelId) {
+        chatModelCache.entrySet().removeIf(entry -> entry.getKey().startsWith(channelId + "_"));
+    }
 }
-
-

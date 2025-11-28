@@ -19,8 +19,8 @@ LLM Manager 是一个现代化的 LLM 管理系统，旨在简化大语言模型
 
 ### 后端
 - **Spring Boot 3.2.5** - 应用框架
-- **Spring AI 1.0.0-M1** - LLM 集成
-- **Java 21** - 编程语言
+- **Spring AI OpenAI 1.1.0-M4** - LLM 集成（支持 OpenAI 兼容接口）
+- **Java 17+** - 编程语言（推荐 Java 21）
 - **Spring Data JPA** - 数据持久化
 - **H2 Database** - 内存数据库（开发环境）
 - **Sa-Token 1.37.0** - 认证授权
@@ -39,7 +39,7 @@ LLM Manager 是一个现代化的 LLM 管理系统，旨在简化大语言模型
 ## 项目结构
 
 ```
-work_demo/
+llm-manager/
 ├── llm-manager/              # 后端项目
 │   ├── src/
 │   │   ├── main/
@@ -51,8 +51,7 @@ work_demo/
 │   │   │   │       ├── repository/     # 数据访问层
 │   │   │   │       └── service/        # 业务逻辑
 │   │   │   └── resources/
-│   │   │       ├── application.yml     # 默认配置
-│   │   │       └── application-custom.yml  # 自定义配置
+│   │   │       └── application.yml     # 应用配置
 │   │   └── test/
 │   ├── pom.xml
 │   └── custom-settings.xml   # Maven 配置（阿里云镜像）
@@ -71,7 +70,7 @@ work_demo/
 ## 环境要求
 
 ### 后端
-- **JDK 21** 或更高版本
+- **JDK 17** 或更高版本（推荐 JDK 21）
 - **Maven 3.8+**
 - **内存**：至少 1GB 可用内存
 
@@ -136,21 +135,29 @@ npm run dev
 
 ### 后端配置
 
-配置文件位于 `llm-manager/src/main/resources/application-custom.yml`
+配置文件位于 `llm-manager/src/main/resources/application.yml`
 
-#### LLM 提供商配置示例
+#### 默认 LLM 配置
+
+系统支持从数据库 Channel 表动态读取 LLM 配置。以下是默认的 OpenAI 配置（当 Channel 未配置时使用）：
 
 ```yaml
 spring:
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:your-api-key}
-      base-url: https://api.openai.com
-      chat:
-        options:
-          model: gpt-3.5-turbo
-          temperature: 0.7
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
 ```
+
+**配置优先级**：Channel 数据库配置 > 环境变量 > 默认值
+
+#### 支持的 LLM 提供商
+
+系统支持任何兼容 OpenAI API 的服务，包括：
+- **OpenAI** - 官方 API
+- **Ollama** - 本地模型（需设置 base-url 为 `http://localhost:11434`）
+- **Azure OpenAI** - 微软云服务
+- **其他兼容服务** - 如 DeepSeek、零一万物等
 
 #### 数据库配置
 
@@ -312,11 +319,32 @@ Cookie: satoken={token}
 
 ### 后端开发
 
+#### 架构说明
+
+系统采用动态 Channel 配置架构，`LlmExecutionService` 根据数据库中的 Channel 配置动态创建 ChatClient：
+
+```java
+// 从 Channel 配置动态创建 ChatClient
+private ChatClient createChatClient(Channel channel) {
+    String apiKey = channel.getApiKey() != null ? channel.getApiKey() : defaultApiKey;
+    String baseUrl = channel.getBaseUrl() != null ? channel.getBaseUrl() : defaultBaseUrl;
+
+    OpenAiApi openAiApi = OpenAiApi.builder()
+            .baseUrl(baseUrl)
+            .apiKey(apiKey)
+            .build();
+
+    OpenAiChatModel chatModel = OpenAiChatModel.builder()
+            .openAiApi(openAiApi)
+            .build();
+
+    return ChatClient.builder(chatModel).build();
+}
+```
+
 #### 添加新的 LLM 提供商
 
-1. 在 `ChatModelFactory.java` 中添加新类型
-2. 实现对应的 `ChatModel` 创建逻辑
-3. 更新 `ChannelType` 枚举
+由于使用 OpenAI 兼容接口，只需在 Channel 配置中设置正确的 `baseUrl` 和 `apiKey` 即可支持任何兼容服务。
 
 #### 自定义 Prompt 模板
 
@@ -464,6 +492,15 @@ npm install marked dompurify
 - 功能建议：提交 Feature Request
 
 ## 更新日志
+
+### v1.1.0 (2025-11-28)
+
+- 重构：从 DashScope 迁移到 Spring AI OpenAI Starter 1.1.0-M4
+- 新增：支持从数据库 Channel 动态读取 LLM 配置
+- 新增：支持任何 OpenAI 兼容接口（Ollama、Azure、DeepSeek 等）
+- 改进：Channel 配置与默认配置自动降级
+- 优化：ChatClient 缓存机制提升性能
+- 删除：移除 ChatModelFactory，简化架构
 
 ### v1.0.0 (2025-11-24)
 

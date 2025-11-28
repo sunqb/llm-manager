@@ -34,17 +34,10 @@ public class ChatController {
                 System.out.println("[Controller] 开始流式请求");
 
                 executionService.streamChat(modelId, message)
-                        .filter(response -> {
-                            if (response == null || response.getResult() == null) {
-                                return false;
-                            }
-                            String content = response.getResult().getOutput().getContent();
-                            return content != null && !content.isEmpty();
-                        })
+                        .filter(content -> content != null && !content.isEmpty())
                         .subscribe(
-                                response -> {
+                                content -> {
                                     try {
-                                        String content = response.getResult().getOutput().getContent();
                                         String escapedContent = content.replace("\\", "\\\\")
                                                 .replace("\"", "\\\"")
                                                 .replace("\n", "\\n")

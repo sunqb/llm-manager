@@ -57,17 +57,10 @@ public class ExternalChatController {
         executorService.execute(() -> {
             try {
                 executionService.streamChatWithAgent(agent, userMessage)
-                        .filter(response -> {
-                            if (response == null || response.getResult() == null) {
-                                return false;
-                            }
-                            String content = response.getResult().getOutput().getContent();
-                            return content != null && !content.isEmpty();
-                        })
+                        .filter(content -> content != null && !content.isEmpty())
                         .subscribe(
-                                response -> {
+                                content -> {
                                     try {
-                                        String content = response.getResult().getOutput().getContent();
                                         String escapedContent = content.replace("\\", "\\\\")
                                                 .replace("\"", "\\\"")
                                                 .replace("\n", "\\n")

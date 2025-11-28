@@ -1,4 +1,6 @@
 spring:
+  main:
+    allow-bean-definition-overriding: true
   application:
     name: llm-manager
   datasource:
@@ -17,7 +19,8 @@ spring:
       path: /h2-console
   ai:
     openai:
-      api-key: dummy-key-for-startup
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
 
 sa-token:
   # token名称 (同时也是cookie名称)
