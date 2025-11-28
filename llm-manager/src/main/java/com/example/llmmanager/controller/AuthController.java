@@ -3,7 +3,7 @@ package com.example.llmmanager.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.util.SaResult;
 import com.example.llmmanager.entity.User;
-import com.example.llmmanager.repository.UserRepository;
+import com.example.llmmanager.service.UserService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -12,10 +12,10 @@ import java.util.Map;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final UserRepository userRepository;
+    private final UserService userService;
 
-    public AuthController(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    public AuthController(UserService userService) {
+        this.userService = userService;
     }
 
     @PostMapping("/login")
@@ -23,7 +23,7 @@ public class AuthController {
         String username = params.get("username");
         String password = params.get("password");
 
-        User user = userRepository.findByUsername(username).orElse(null);
+        User user = userService.findByUsername(username);
         
         if (user == null || !user.getPassword().equals(password)) {
             return SaResult.error("Invalid username or password");

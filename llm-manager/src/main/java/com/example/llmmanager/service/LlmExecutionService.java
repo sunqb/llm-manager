@@ -3,7 +3,6 @@ package com.example.llmmanager.service;
 import com.example.llmmanager.entity.Agent;
 import com.example.llmmanager.entity.Channel;
 import com.example.llmmanager.entity.LlmModel;
-import com.example.llmmanager.repository.LlmModelRepository;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -20,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class LlmExecutionService {
 
-    private final LlmModelRepository modelRepository;
+    private final LlmModelService llmModelService;
+    private final ChannelService channelService;
     // 缓存已创建的 ChatModel，避免重复创建
     private final Map<String, OpenAiChatModel> chatModelCache = new ConcurrentHashMap<>();
 
@@ -30,8 +30,9 @@ public class LlmExecutionService {
     @Value("${spring.ai.openai.base-url:https://api.openai.com}")
     private String defaultBaseUrl;
 
-    public LlmExecutionService(LlmModelRepository modelRepository) {
-        this.modelRepository = modelRepository;
+    public LlmExecutionService(LlmModelService llmModelService, ChannelService channelService) {
+        this.llmModelService = llmModelService;
+        this.channelService = channelService;
     }
 
     /**
@@ -60,14 +61,19 @@ public class LlmExecutionService {
     }
 
     public String chat(Long modelId, String userMessage) {
-        LlmModel model = modelRepository.findById(modelId)
-                .orElseThrow(() -> new RuntimeException("Model not found"));
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
 
         return executeRequest(model, userMessage, null);
     }
 
     public String chatWithAgent(Agent agent, String userMessage) {
-        LlmModel model = agent.getLlmModel();
+        LlmModel model = llmModelService.getById(agent.getLlmModelId());
+        if (model == null) {
+            throw new RuntimeException("Model not found for agent");
+        }
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
 
         return executeRequest(model, userMessage, agent.getSystemPrompt(), temp);
@@ -78,7 +84,7 @@ public class LlmExecutionService {
     }
 
     private String executeRequest(LlmModel model, String userMessageStr, String systemPromptStr, Double temperature) {
-        Channel channel = model.getChannel();
+        Channel channel = channelService.getById(model.getChannelId());
         if (channel == null) {
             throw new RuntimeException("Model has no associated channel");
         }
@@ -109,14 +115,19 @@ public class LlmExecutionService {
 
     // 流式聊天方法
     public Flux<String> streamChat(Long modelId, String userMessage) {
-        LlmModel model = modelRepository.findById(modelId)
-                .orElseThrow(() -> new RuntimeException("Model not found"));
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
 
         return executeStreamRequest(model, userMessage, null);
     }
 
     public Flux<String> streamChatWithAgent(Agent agent, String userMessage) {
-        LlmModel model = agent.getLlmModel();
+        LlmModel model = llmModelService.getById(agent.getLlmModelId());
+        if (model == null) {
+            throw new RuntimeException("Model not found for agent");
+        }
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
 
         return executeStreamRequest(model, userMessage, agent.getSystemPrompt(), temp);
@@ -127,7 +138,7 @@ public class LlmExecutionService {
     }
 
     private Flux<String> executeStreamRequest(LlmModel model, String userMessageStr, String systemPromptStr, Double temperature) {
-        Channel channel = model.getChannel();
+        Channel channel = channelService.getById(model.getChannelId());
         if (channel == null) {
             throw new RuntimeException("Model has no associated channel");
         }

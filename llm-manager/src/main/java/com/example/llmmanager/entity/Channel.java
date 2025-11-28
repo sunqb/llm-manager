@@ -1,20 +1,19 @@
 package com.example.llmmanager.entity;
 
-import jakarta.persistence.*;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-@Entity
 @Data
-@Table(name = "channels")
+@TableName("channels")
 public class Channel {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     private String name; // e.g. "My OpenAI Account"
 
-    @Enumerated(EnumType.STRING)
-    private ProviderType type; // OPENAI, OLLAMA, AZURE
+    private String type; // OPENAI, OLLAMA, AZURE_OPENAI
 
     private String baseUrl; // Optional, for custom endpoints
     private String apiKey;  // Encrypted in real app, plain for demo

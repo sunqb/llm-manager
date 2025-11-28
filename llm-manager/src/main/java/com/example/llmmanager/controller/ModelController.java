@@ -1,7 +1,7 @@
 package com.example.llmmanager.controller;
 
 import com.example.llmmanager.entity.LlmModel;
-import com.example.llmmanager.repository.LlmModelRepository;
+import com.example.llmmanager.service.LlmModelService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,25 +10,29 @@ import java.util.List;
 @RequestMapping("/api/models")
 public class ModelController {
 
-    private final LlmModelRepository repository;
+    private final LlmModelService llmModelService;
 
-    public ModelController(LlmModelRepository repository) {
-        this.repository = repository;
+    public ModelController(LlmModelService llmModelService) {
+        this.llmModelService = llmModelService;
     }
 
     @GetMapping
     public List<LlmModel> getAll() {
-        return repository.findAll();
+        return llmModelService.findAll();
     }
 
     @PostMapping
     public LlmModel create(@RequestBody LlmModel model) {
-        return repository.save(model);
+        return llmModelService.create(model);
     }
 
     @GetMapping("/{id}")
     public LlmModel get(@PathVariable Long id) {
-        return repository.findById(id).orElseThrow(() -> new RuntimeException("Not found"));
+        LlmModel model = llmModelService.findById(id);
+        if (model == null) {
+            throw new RuntimeException("Not found");
+        }
+        return model;
     }
 
     @PutMapping("/{id}")
@@ -36,13 +40,13 @@ public class ModelController {
         LlmModel existing = get(id);
         existing.setName(updated.getName());
         existing.setModelIdentifier(updated.getModelIdentifier());
-        existing.setChannel(updated.getChannel());
+        existing.setChannelId(updated.getChannelId());
         existing.setTemperature(updated.getTemperature());
-        return repository.save(existing);
+        return llmModelService.update(existing);
     }
 
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
-        repository.deleteById(id);
+        llmModelService.delete(id);
     }
 }

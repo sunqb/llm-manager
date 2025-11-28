@@ -1,27 +1,25 @@
 package com.example.llmmanager.entity;
 
-import jakarta.persistence.*;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-@Entity
 @Data
-@Table(name = "agents")
+@TableName("agents")
 public class Agent {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     private String name; // e.g. "Coding Assistant"
     
-    @Column(unique = true)
     private String slug; // e.g. "coder-v1" for URL access
 
-    @Column(length = 5000)
     private String systemPrompt; // The persona definition
 
-    @ManyToOne
-    @JoinColumn(name = "llm_model_id")
-    private LlmModel llmModel;
+    @TableField("llm_model_id")
+    private Long llmModelId;
 
     private Double temperatureOverride; // Optional override
 }

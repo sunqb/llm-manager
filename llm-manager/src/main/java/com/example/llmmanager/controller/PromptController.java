@@ -1,7 +1,7 @@
 package com.example.llmmanager.controller;
 
 import com.example.llmmanager.entity.Prompt;
-import com.example.llmmanager.repository.PromptRepository;
+import com.example.llmmanager.service.PromptService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,19 +10,19 @@ import java.util.List;
 @RequestMapping("/api/prompts")
 public class PromptController {
 
-    private final PromptRepository repository;
+    private final PromptService promptService;
 
-    public PromptController(PromptRepository repository) {
-        this.repository = repository;
+    public PromptController(PromptService promptService) {
+        this.promptService = promptService;
     }
 
     @GetMapping
     public List<Prompt> getAll() {
-        return repository.findAll();
+        return promptService.findAll();
     }
 
     @PostMapping
     public Prompt create(@RequestBody Prompt prompt) {
-        return repository.save(prompt);
+        return promptService.create(prompt);
     }
 }

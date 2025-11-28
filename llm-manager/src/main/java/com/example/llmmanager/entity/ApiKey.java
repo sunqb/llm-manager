@@ -1,32 +1,33 @@
 package com.example.llmmanager.entity;
 
-import jakarta.persistence.*;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Entity
 @Data
-@Table(name = "api_keys")
+@TableName("api_keys")
 public class ApiKey {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     private String name; // e.g. "Client A", "Mobile App"
     
-    @Column(unique = true, nullable = false)
     private String token;
 
     private boolean active = true;
 
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
+    
     private LocalDateTime expiresAt; // Optional
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
+    public void generateToken() {
         if (token == null) {
             token = "sk-" + UUID.randomUUID().toString().replace("-", "");
         }

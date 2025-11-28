@@ -1,7 +1,7 @@
 package com.example.llmmanager.controller;
 
 import com.example.llmmanager.entity.Channel;
-import com.example.llmmanager.repository.ChannelRepository;
+import com.example.llmmanager.service.ChannelService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,25 +10,29 @@ import java.util.List;
 @RequestMapping("/api/channels")
 public class ChannelController {
 
-    private final ChannelRepository repository;
+    private final ChannelService channelService;
 
-    public ChannelController(ChannelRepository repository) {
-        this.repository = repository;
+    public ChannelController(ChannelService channelService) {
+        this.channelService = channelService;
     }
 
     @GetMapping
     public List<Channel> getAll() {
-        return repository.findAll();
+        return channelService.findAll();
     }
 
     @PostMapping
     public Channel create(@RequestBody Channel channel) {
-        return repository.save(channel);
+        return channelService.create(channel);
     }
 
     @GetMapping("/{id}")
     public Channel get(@PathVariable Long id) {
-        return repository.findById(id).orElseThrow(() -> new RuntimeException("Not found"));
+        Channel channel = channelService.findById(id);
+        if (channel == null) {
+            throw new RuntimeException("Not found");
+        }
+        return channel;
     }
 
     @PutMapping("/{id}")
@@ -39,11 +43,11 @@ public class ChannelController {
         existing.setBaseUrl(updated.getBaseUrl());
         existing.setType(updated.getType());
         existing.setAdditionalConfig(updated.getAdditionalConfig());
-        return repository.save(existing);
+        return channelService.update(existing);
     }
 
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
-        repository.deleteById(id);
+        channelService.delete(id);
     }
 }

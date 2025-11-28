@@ -1,7 +1,7 @@
 package com.example.llmmanager.controller;
 
 import com.example.llmmanager.entity.Agent;
-import com.example.llmmanager.repository.AgentRepository;
+import com.example.llmmanager.service.AgentService;
 import com.example.llmmanager.service.LlmExecutionService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -18,12 +18,12 @@ import java.util.concurrent.Executors;
 @RequestMapping("/api/external")
 public class ExternalChatController {
 
-    private final AgentRepository agentRepository;
+    private final AgentService agentService;
     private final LlmExecutionService executionService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
-    public ExternalChatController(AgentRepository agentRepository, LlmExecutionService executionService) {
-        this.agentRepository = agentRepository;
+    public ExternalChatController(AgentService agentService, LlmExecutionService executionService) {
+        this.agentService = agentService;
         this.executionService = executionService;
     }
 
@@ -34,8 +34,10 @@ public class ExternalChatController {
             throw new IllegalArgumentException("Message content is required");
         }
 
-        Agent agent = agentRepository.findBySlug(slug)
-                .orElseThrow(() -> new RuntimeException("Agent not found: " + slug));
+        Agent agent = agentService.findBySlug(slug);
+        if (agent == null) {
+            throw new RuntimeException("Agent not found: " + slug);
+        }
 
         String response = executionService.chatWithAgent(agent, userMessage);
         
@@ -49,8 +51,10 @@ public class ExternalChatController {
             throw new IllegalArgumentException("Message content is required");
         }
 
-        Agent agent = agentRepository.findBySlug(slug)
-                .orElseThrow(() -> new RuntimeException("Agent not found: " + slug));
+        Agent agent = agentService.findBySlug(slug);
+        if (agent == null) {
+            throw new RuntimeException("Agent not found: " + slug);
+        }
 
         SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
 

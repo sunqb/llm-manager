@@ -1,7 +1,7 @@
 package com.example.llmmanager.config;
 
 import com.example.llmmanager.entity.ApiKey;
-import com.example.llmmanager.repository.ApiKeyRepository;
+import com.example.llmmanager.service.ApiKeyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,15 +10,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Optional;
 
 @Component
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
-    private final ApiKeyRepository apiKeyRepository;
+    private final ApiKeyService apiKeyService;
 
-    public ApiKeyAuthFilter(ApiKeyRepository apiKeyRepository) {
-        this.apiKeyRepository = apiKeyRepository;
+    public ApiKeyAuthFilter(ApiKeyService apiKeyService) {
+        this.apiKeyService = apiKeyService;
     }
 
     @Override
@@ -47,9 +46,9 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         String token = authHeader.substring(7);
-        Optional<ApiKey> keyOpt = apiKeyRepository.findByToken(token);
+        ApiKey apiKey = apiKeyService.findByToken(token);
 
-        if (keyOpt.isPresent() && keyOpt.get().isActive()) {
+        if (apiKey != null && apiKey.isActive()) {
             // Valid key, proceed
             filterChain.doFilter(request, response);
         } else {

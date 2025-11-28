@@ -1,17 +1,16 @@
 package com.example.llmmanager.entity;
 
-import jakarta.persistence.*;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-@Entity
 @Data
-@Table(name = "users")
+@TableName("users")
 public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
-    @Column(unique = true, nullable = false)
     private String username;
 
     private String password; // Plain text for demo, should be hashed
