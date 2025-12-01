@@ -3,11 +3,11 @@ spring:
     allow-bean-definition-overriding: true
   application:
     name: llm-manager
-	  datasource:
-	    url: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=true&requireSSL=true&verifyServerCertificate=false&serverTimezone=Asia/Shanghai
-	    driver-class-name: com.mysql.cj.jdbc.Driver
-	    username: ""
-	    password: ""
+  datasource:
+    url: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=true&requireSSL=true&verifyServerCertificate=false&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ""
+    password: ""
     druid:
       # 初始化连接数
       initial-size: 5
