@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export JAVA_8_HOME=/Volumes/samsungssd/soft/jdk1.8.0_431.jdk/Contents/Home)",
+      "Bash(export JAVA_21_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home)",
+      "Bash(export JAVA_HOME=$JAVA_21_HOME)",
+      "Bash(java:*)",
+      "Bash(export JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home)",
+      "Bash(mvn clean compile:*)",
+      "Bash(find:*)",
+      "Bash(tree:*)",
+      "WebFetch(domain:java2ai.com)",
+      "mcp__mcp-deepwiki__deepwiki_fetch",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash($JAVA_HOME/bin/java -version)",
+      "Bash(mvn compile:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

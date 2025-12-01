@@ -1,0 +1,17 @@
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/message/SystemMessage.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/message/MessageConverter.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/message/AssistantMessage.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/message/UserMessage.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/agent/LlmChatAgent.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/advisor/ChatMemoryManager.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/storage/entity/ChatHistory.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/model/impl/OpenAiChatModelAdapter.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/message/Message.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/advisor/ChatMemoryStore.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/model/ChatModel.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/storage/mapper/ChatHistoryMapper.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/model/ChatResponse.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/message/MessageType.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/model/ChatOptions.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/dto/ChatRequest.java
+/Volumes/samsungssd/github/llm-manager/llm-manager-parent/llm-agent/src/main/java/com/llmmanager/agent/storage/impl/ChatMemoryStoreImpl.java

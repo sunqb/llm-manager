@@ -12,7 +12,14 @@
       "Bash(npm install:*)",
       "Bash(git init:*)",
       "Bash(git branch:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "mcp__mcp-feedback-enhanced__interactive_feedback",
+      "Bash(JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home mvn dependency:tree:*)",
+      "WebFetch(domain:java2ai.com)",
+      "mcp__mcp-deepwiki__deepwiki_fetch",
+      "Bash(JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home mvn clean spring-boot:run:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nrefactor: 迁移到 Spring AI OpenAI Starter 支持动态 Channel 配置\n\n- 从 DashScope (spring-ai-alibaba-starter) 迁移到 spring-ai-starter-model-openai 1.1.0-M4\n- 重构 LlmExecutionService 支持从数据库 Channel 动态读取 LLM 配置\n- 实现 ChatClient 缓存机制提升性能\n- 支持任何 OpenAI 兼容接口 (Ollama, Azure, DeepSeek 等)\n- 配置优先级: Channel 配置 > 环境变量 > 默认值\n- 删除 ChatModelFactory，简化架构\n- 更新 README 文档\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
