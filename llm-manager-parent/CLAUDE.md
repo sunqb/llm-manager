@@ -1039,13 +1039,505 @@ public interface VectorStore {
 
 ---
 
-### 实施优先级
-1. ✅ **阶段 1**：Augmented LLM 基础抽象（已完成）
-2. 🔲 **阶段 2**：工具调用层（下一阶段）
-3. 🔲 **阶段 3**：多模态支持
-4. 🔲 **阶段 4**：MCP + Vector Store
+---
 
-### 后续集成 Agent Framework 和 Graph
-完成以上 4 个阶段后，将集成：
-- **Agent Framework**：基于 ReactAgent 的智能代理框架
-- **Graph**：工作流编排和多代理协调
+### 阶段 5：Super Agent with Spring AI Alibaba 🎯 推荐方案
+
+#### 概述
+
+**Spring AI Alibaba 提供了完整的 Agent 框架**，无需手动实现 ReAct 循环、工作流编排等功能。建议直接使用官方框架，开发效率提升 3 倍！
+
+官方文档：https://github.com/alibaba/spring-ai-alibaba
+
+#### Spring AI Alibaba 核心组件
+
+**1. Agent Framework**（智能体框架）
+
+提供多种开箱即用的 Agent 类型：
+- **ReactAgent**：基于 ReAct 模式（Reasoning + Acting）
+- **SequentialAgent**：顺序执行多个步骤
+- **ParallelAgent**：并行执行多个任务
+- **LoopAgent**：循环执行直到满足条件
+- **RoutingAgent**：动态路由到不同的处理分支
+
+**2. Graph Runtime**（工作流引擎）
+
+低级别的工作流编排框架，支持：
+- 节点（Node）定义和注册
+- 边（Edge）和条件路由
+- 状态管理（State）
+- 异步执行
+- 导出 PlantUML/Mermaid 图
+
+**3. MCP 集成**（Model Context Protocol）
+
+原生支持 MCP 工具调用：
+- `McpRouterService`：MCP 路由服务
+- 自动搜索和调用 MCP 工具
+- 支持多个 MCP 服务器
+
+**4. A2A（Agent-to-Agent）**
+
+多 Agent 协作框架：
+- Agent 间通信协议
+- Agent 注册和发现
+- 请求路由和转发
+
+---
+
+#### 依赖配置
+
+在 `llm-agent/pom.xml` 中添加：
+
+```xml
+<dependencies>
+    <!-- Spring AI Alibaba Agent Framework -->
+    <dependency>
+        <groupId>com.alibaba.cloud.ai</groupId>
+        <artifactId>spring-ai-alibaba-starter-agent</artifactId>
+        <version>1.0.0-M4</version>
+    </dependency>
+
+    <!-- Spring AI Alibaba Graph -->
+    <dependency>
+        <groupId>com.alibaba.cloud.ai</groupId>
+        <artifactId>spring-ai-alibaba-graph-core</artifactId>
+        <version>1.0.0-M4</version>
+    </dependency>
+
+    <!-- Spring AI Alibaba MCP -->
+    <dependency>
+        <groupId>com.alibaba.cloud.ai</groupId>
+        <artifactId>spring-ai-alibaba-mcp-router</artifactId>
+        <version>1.0.0-M4</version>
+    </dependency>
+
+    <!-- A2A Agent 通信 -->
+    <dependency>
+        <groupId>com.alibaba.cloud.ai</groupId>
+        <artifactId>spring-ai-alibaba-a2a-client</artifactId>
+        <version>1.0.0-M4</version>
+    </dependency>
+</dependencies>
+```
+
+---
+
+#### DeepResearch 风格工作流实现
+
+```java
+/**
+ * 基于 Spring AI Alibaba Graph 的 DeepResearch 智能体
+ */
+@Service
+public class DeepResearchAgent {
+
+    @Autowired
+    private ChatModel chatModel;
+
+    @Autowired
+    private Function<WebSearchRequest, WebSearchResponse> webSearchFunction;
+
+    /**
+     * 构建 DeepResearch 工作流
+     */
+    @Bean
+    public CompiledGraph deepResearchGraph() {
+        // 定义全局状态
+        OverAllStateFactory stateFactory = () -> {
+            OverAllState state = new OverAllState();
+            state.registerKeyAndStrategy("question", new ReplaceStrategy());
+            state.registerKeyAndStrategy("search_results", new AppendStrategy());
+            state.registerKeyAndStrategy("analysis", new ReplaceStrategy());
+            state.registerKeyAndStrategy("final_answer", new ReplaceStrategy());
+            return state;
+        };
+
+        // 节点1：初始搜索
+        NodeAction initialSearchNode = (state, config) -> {
+            String question = (String) state.value("question").orElse("");
+
+            // 调用搜索工具
+            WebSearchResponse result = webSearchFunction.apply(
+                new WebSearchRequest(question, 5)
+            );
+
+            state.update("search_results", result);
+            return state;
+        };
+
+        // 节点2：分析并决定下一步
+        NodeAction analysisNode = (state, config) -> {
+            String question = (String) state.value("question").orElse("");
+            List<Object> searchResults = (List<Object>) state.value("search_results").orElse(List.of());
+
+            // 让 LLM 分析结果，决定是否需要更多信息
+            String prompt = String.format("""
+                问题：%s
+
+                当前搜索结果：
+                %s
+
+                分析这些信息是否足够回答问题。
+                如果足够，请返回 "SUFFICIENT"。
+                如果不够，请返回 "NEED_MORE: [具体需要什么信息]"
+                """, question, searchResults);
+
+            String analysis = chatModel.call(prompt);
+            state.update("analysis", analysis);
+            return state;
+        };
+
+        // 节点3：深度搜索
+        NodeAction deepSearchNode = (state, config) -> {
+            String analysis = (String) state.value("analysis").orElse("");
+
+            // 提取需要补充的信息
+            String additionalQuery = extractQuery(analysis);
+
+            // 执行深度搜索
+            WebSearchResponse result = webSearchFunction.apply(
+                new WebSearchRequest(additionalQuery, 3)
+            );
+
+            state.update("search_results", result);
+            return state;
+        };
+
+        // 节点4：生成最终答案
+        NodeAction finalAnswerNode = (state, config) -> {
+            String question = (String) state.value("question").orElse("");
+            List<Object> allResults = (List<Object>) state.value("search_results").orElse(List.of());
+
+            String prompt = String.format("""
+                问题：%s
+
+                收集到的所有信息：
+                %s
+
+                基于以上信息，给出全面的答案。
+                """, question, allResults);
+
+            String answer = chatModel.call(prompt);
+            state.update("final_answer", answer);
+            return state;
+        };
+
+        // 构建工作流图
+        StateGraph graph = new StateGraph("DeepResearch", stateFactory)
+            .addNode("initial_search", node_async(initialSearchNode))
+            .addNode("analysis", node_async(analysisNode))
+            .addNode("deep_search", node_async(deepSearchNode))
+            .addNode("final_answer", node_async(finalAnswerNode))
+
+            .addEdge(START, "initial_search")
+            .addEdge("initial_search", "analysis")
+
+            // 条件路由：根据分析结果决定是否需要更多搜索
+            .addConditionalEdges("analysis",
+                edge_async(new AnalysisDispatcher()),
+                Map.of(
+                    "SUFFICIENT", "final_answer",
+                    "NEED_MORE", "deep_search"
+                ))
+
+            .addEdge("deep_search", "analysis")  // 循环：深度搜索后再次分析
+            .addEdge("final_answer", END);
+
+        return graph.compile();
+    }
+
+    /**
+     * 分析结果路由器
+     */
+    static class AnalysisDispatcher implements EdgeAction {
+        @Override
+        public String apply(OverAllState state) {
+            String analysis = (String) state.value("analysis").orElse("");
+            return analysis.startsWith("SUFFICIENT") ? "SUFFICIENT" : "NEED_MORE";
+        }
+    }
+
+    /**
+     * 执行 DeepResearch
+     */
+    public String research(String question) {
+        Map<String, Object> initialState = Map.of("question", question);
+
+        RunnableConfig config = RunnableConfig.builder()
+            .threadId(UUID.randomUUID().toString())
+            .build();
+
+        OverAllState finalState = deepResearchGraph().invoke(initialState, config);
+
+        return (String) finalState.value("final_answer").orElse("无法生成答案");
+    }
+
+    /**
+     * 流式执行（前端实时展示）
+     */
+    public Flux<GraphEvent> researchStream(String question) {
+        Map<String, Object> initialState = Map.of("question", question);
+
+        RunnableConfig config = RunnableConfig.builder()
+            .threadId(UUID.randomUUID().toString())
+            .build();
+
+        return deepResearchGraph().toFlux(initialState, config)
+            .map(state -> new GraphEvent(
+                (String) state.value("current_node").orElse("unknown"),
+                state.values()
+            ));
+    }
+}
+```
+
+---
+
+#### MCP 工具集成
+
+```java
+/**
+ * 集成 MCP 工具的智能体
+ */
+@Service
+public class SuperAgentWithMcp {
+
+    @Autowired
+    private McpRouterService mcpRouter;
+
+    @Autowired
+    private ChatModel chatModel;
+
+    /**
+     * 智能选择并调用 MCP 工具
+     */
+    public String executeWithMcp(String userQuery) {
+        // 1. 让 LLM 分析需要什么工具
+        String toolAnalysis = chatModel.call(
+            "用户问题：" + userQuery + "\n需要什么工具来回答这个问题？"
+        );
+
+        // 2. 搜索合适的 MCP 服务器
+        String mcpServers = mcpRouter.searchMcpServer(
+            toolAnalysis,
+            "database,web,search,analysis",
+            5
+        );
+
+        // 3. 让 LLM 决定使用哪个服务器和工具
+        String toolDecision = chatModel.call(
+            "可用服务器：" + mcpServers + "\n选择最合适的工具"
+        );
+
+        // 4. 执行工具
+        ToolCall toolCall = parseToolCall(toolDecision);
+        String result = mcpRouter.useTool(
+            toolCall.serverName(),
+            toolCall.toolName(),
+            toolCall.arguments()
+        );
+
+        // 5. 基于工具结果生成最终答案
+        return chatModel.call(
+            "用户问题：" + userQuery + "\n工具结果：" + result + "\n给出答案"
+        );
+    }
+
+    private ToolCall parseToolCall(String decision) {
+        // 解析 LLM 决策，提取工具调用信息
+        // ...
+    }
+}
+
+record ToolCall(String serverName, String toolName, String arguments) {}
+```
+
+---
+
+#### A2A 多 Agent 协作
+
+```java
+/**
+ * 多 Agent 协作示例
+ */
+@Service
+public class MultiAgentOrchestrator {
+
+    @Autowired
+    private A2aClient a2aClient;
+
+    /**
+     * 协调多个 Agent 完成复杂任务
+     */
+    public String coordinateAgents(String userQuery) {
+        // 步骤1：调用研究 Agent（联网搜索）
+        String researchResult = a2aClient.call(
+            "research-agent",
+            String.format("{\"task\": \"web-search\", \"query\": \"%s\"}", userQuery)
+        );
+
+        // 步骤2：调用数据分析 Agent
+        String analysisResult = a2aClient.call(
+            "data-analysis-agent",
+            String.format("{\"task\": \"analyze\", \"data\": %s}", researchResult)
+        );
+
+        // 步骤3：调用摘要 Agent
+        String summary = a2aClient.call(
+            "summary-agent",
+            String.format("{\"task\": \"summarize\", \"content\": \"%s\"}", analysisResult)
+        );
+
+        return summary;
+    }
+}
+```
+
+---
+
+#### Controller API
+
+```java
+/**
+ * Super Agent API Controller
+ */
+@RestController
+@RequestMapping("/api/super-agent")
+public class SuperAgentController {
+
+    @Autowired
+    private DeepResearchAgent deepResearchAgent;
+
+    /**
+     * 同步 DeepResearch
+     */
+    @PostMapping("/research")
+    public ResponseEntity<String> research(@RequestBody ResearchRequest request) {
+        String answer = deepResearchAgent.research(request.question());
+        return ResponseEntity.ok(answer);
+    }
+
+    /**
+     * 流式 DeepResearch（前端实时展示）
+     */
+    @GetMapping(value = "/research-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<GraphEvent>> researchStream(@RequestParam String question) {
+        return deepResearchAgent.researchStream(question)
+            .map(event -> ServerSentEvent.<GraphEvent>builder()
+                .event(event.nodeName())
+                .data(event)
+                .build());
+    }
+}
+
+record ResearchRequest(String question) {}
+record GraphEvent(String nodeName, Map<String, Object> state) {}
+```
+
+---
+
+#### 数据库设计
+
+```sql
+-- 超级智能体配置表
+CREATE TABLE super_agent (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL COMMENT '智能体名称',
+    slug VARCHAR(100) UNIQUE NOT NULL COMMENT 'URL标识',
+    description TEXT COMMENT '描述',
+    workflow_type VARCHAR(50) COMMENT '工作流类型（DEEP_RESEARCH/SEQUENTIAL/PARALLEL）',
+    graph_config JSON COMMENT 'Graph 配置（节点、边、路由）',
+    model_id BIGINT COMMENT '默认模型ID',
+    max_iterations INT DEFAULT 5 COMMENT '最大推理轮数',
+    enabled_tools JSON COMMENT '启用的工具列表',
+    mcp_servers JSON COMMENT 'MCP 服务器配置',
+    is_active TINYINT DEFAULT 1,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_slug (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='超级智能体配置';
+
+-- 智能体执行日志表
+CREATE TABLE agent_execution_log (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id VARCHAR(100) NOT NULL COMMENT '任务ID',
+    agent_id BIGINT COMMENT '智能体ID',
+    conversation_id VARCHAR(255) COMMENT '会话ID',
+    question TEXT COMMENT '用户问题',
+    node_name VARCHAR(100) COMMENT '节点名称',
+    node_output TEXT COMMENT '节点输出',
+    execution_time_ms INT COMMENT '执行耗时（毫秒）',
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_task_id (task_id),
+    INDEX idx_agent_id (agent_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体执行日志';
+```
+
+---
+
+#### 包结构（使用 Spring AI Alibaba）
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── super/                          # 超级智能体（基于 Spring AI Alibaba）
+│   ├── DeepResearchAgent.java     # DeepResearch 工作流
+│   ├── SuperAgentWithMcp.java     # 集成 MCP 工具
+│   └── MultiAgentOrchestrator.java # 多 Agent 协作
+├── graph/                          # Spring AI Alibaba Graph 封装
+│   ├── nodes/                      # 自定义节点
+│   ├── edges/                      # 自定义路由
+│   └── states/                     # 状态定义
+└── tools/                          # 扩展工具
+    └── web/
+        └── WebSearchTool.java      # 联网搜索工具
+```
+
+---
+
+#### 优势对比
+
+| 特性 | 手动实现 | Spring AI Alibaba |
+|------|---------|-------------------|
+| **ReAct Agent** | 需要自己实现 | ✅ 开箱即用 |
+| **工作流编排** | 需要自己设计状态机 | ✅ StateGraph 原生支持 |
+| **MCP 集成** | 需要自己实现客户端 | ✅ McpRouterService 内置 |
+| **多 Agent 协作** | 需要自己设计通信协议 | ✅ A2A 框架 |
+| **条件路由** | 需要自己实现 | ✅ addConditionalEdges |
+| **并行执行** | 需要管理线程池 | ✅ node_async 自动处理 |
+| **状态管理** | 需要自己设计 | ✅ OverAllState + Strategy |
+| **可观测性** | 需要集成 Micrometer | ✅ 内置 Observation 支持 |
+| **开发时间** | 2-3 周 | **3-5 天** |
+
+---
+
+#### 实施计划（使用 Spring AI Alibaba）
+
+1. **第 1 天**：集成 Spring AI Alibaba 依赖和配置
+2. **第 2-3 天**：实现 DeepResearch 工作流
+3. **第 4 天**：集成 MCP 工具和 A2A 协作
+4. **第 5 天**：前端展示和 API 对接
+
+**总计约 5 天**，比手动实现快 **3 倍**！
+
+---
+
+### 实施优先级
+
+1. ✅ **阶段 1**：Augmented LLM 基础抽象（已完成）
+2. ✅ **阶段 2**：工具调用层（已完成）
+3. 🎯 **阶段 5**：Super Agent with Spring AI Alibaba（**推荐优先实现**）
+4. 🔲 **阶段 3**：多模态支持（可选）
+5. 🔲 **阶段 4**：MCP + Vector Store（Spring AI Alibaba 已内置）
+
+### 总结
+
+**强烈建议使用 Spring AI Alibaba 框架**，理由：
+- ✅ 官方维护，稳定可靠
+- ✅ 功能完整，开箱即用
+- ✅ 文档齐全，社区活跃
+- ✅ 开发效率提升 3 倍
+- ✅ 与 Spring 生态无缝集成
+
+阶段 3、4 可以根据实际需求选择性实现，因为 Spring AI Alibaba 已经内置了大部分功能。
