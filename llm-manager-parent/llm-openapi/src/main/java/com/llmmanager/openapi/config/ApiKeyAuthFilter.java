@@ -37,13 +37,17 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         }
 
         String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (authHeader == null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("Missing or invalid Authorization header");
             return;
         }
+        // 兼容Bearer 前缀，如果添加了的话，自动去除
+        if (authHeader.startsWith("Bearer ")) {
+            authHeader = authHeader.substring(7);
+        }
 
-        String token = authHeader.substring(7);
+        String token = authHeader;
         ApiKey apiKey = apiKeyService.findByToken(token);
 
         if (apiKey != null && Integer.valueOf(1).equals(apiKey.getActive())) {

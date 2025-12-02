@@ -92,3 +92,7 @@ sa-token:
   is-read-cookie: false
   # 是否从head中读取token
   is-read-head: true
+
+# 服务端口
+server:
+    port: 8080
