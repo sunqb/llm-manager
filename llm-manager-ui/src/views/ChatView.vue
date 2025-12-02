@@ -38,7 +38,6 @@ const selectedTools = ref([]) // 已选择的工具名称列表
 const messages = ref([])
 const userInput = ref('')
 const loading = ref(false)
-const debugToken = ref('') // For testing agent auth
 const chatContainer = ref(null) // Ref for auto-scrolling
 const conversationId = ref(null) // 会话ID，前端控制
 
@@ -139,23 +138,18 @@ const send = async () => {
 
     try {
         if (useAgent.value) {
-            if(!debugToken.value) {
-                messages.value[assistantMsgIndex] = { role: 'error', content: '请先输入访问令牌 (Token) 以测试智能体。' }
-                loading.value = false
-                return
-            }
-
-            // 使用流式API
+            // 使用智能体流式API（内部接口，支持会话历史）
             await api.chatWithAgentStream(
                 selectedAgentSlug.value,
                 text,
-                debugToken.value,
+                conversationId.value,
                 (chunk) => {
                     // 实时追加内容
                     messages.value[assistantMsgIndex].content += chunk
                 },
                 () => {
-                    // 完成
+                    // 完成，保存消息到 localStorage
+                    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
                     loading.value = false
                 },
                 (error) => {
@@ -312,10 +306,9 @@ onUnmounted(() => {
             </div>
 
             <div v-else class="flex items-center gap-2 flex-grow max-w-xl">
-                <select v-model="selectedAgentSlug" class="w-1/2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none">
+                <select v-model="selectedAgentSlug" class="flex-grow px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none">
                     <option v-for="a in agents" :key="a.id" :value="a.slug">🤖 {{ a.name }}</option>
                 </select>
-                <input v-model="debugToken" placeholder="粘贴 Access Token" class="w-1/2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none font-mono" />
             </div>
         </div>
         

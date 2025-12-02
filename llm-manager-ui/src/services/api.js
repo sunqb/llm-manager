@@ -91,18 +91,23 @@ export default {
     )
   },
 
-  chatWithAgentStream(slug, message, token, onChunk, onComplete, onError) {
-    const url = `http://localhost:8080/api/external/agents/${slug}/chat/stream`
+  chatWithAgentStream(slug, message, conversationId, onChunk, onComplete, onError) {
+    const token = localStorage.getItem('satoken')
+
+    // 如果有 conversationId，添加到 URL 查询参数（支持会话历史）
+    const url = conversationId
+      ? `http://localhost:8080/api/chat/agents/${slug}/stream?conversationId=${conversationId}`
+      : `http://localhost:8080/api/chat/agents/${slug}/stream`
 
     return streamFetch(
       url,
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'text/plain',
+          'satoken': token || ''
         },
-        body: JSON.stringify({ message })
+        body: message
       },
       onChunk,
       onComplete,

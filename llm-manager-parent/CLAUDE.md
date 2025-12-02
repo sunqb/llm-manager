@@ -256,6 +256,18 @@ curl -X POST http://localhost:8080/api/chat/{modelId}/stream-with-reasoning \
   -H "Cookie: satoken={token}" \
   -H "Content-Type: text/plain" \
   -d "你好"
+
+# 智能体流式对话（使用业务智能体配置）
+curl -N -X POST http://localhost:8080/api/chat/agents/{slug}/stream \
+  -H "Cookie: satoken={token}" \
+  -H "Content-Type: text/plain" \
+  -d "你好"
+
+# 智能体流式对话（带会话历史记忆）
+curl -N -X POST "http://localhost:8080/api/chat/agents/{slug}/stream?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -H "Content-Type: text/plain" \
+  -d "继续上次的话题"
 ```
 
 ### 外部 Agent API (需 API Key)

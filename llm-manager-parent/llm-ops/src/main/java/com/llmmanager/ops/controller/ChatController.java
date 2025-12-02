@@ -1,6 +1,8 @@
 package com.llmmanager.ops.controller;
 
 import com.llmmanager.agent.config.ToolFunctionManager;
+import com.llmmanager.service.core.entity.Agent;
+import com.llmmanager.service.core.service.AgentService;
 import com.llmmanager.service.orchestration.LlmExecutionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -23,6 +25,9 @@ public class ChatController {
 
     @Resource
     private LlmExecutionService executionService;
+
+    @Resource
+    private AgentService agentService;
 
     @Resource
     private ToolFunctionManager toolFunctionManager;
@@ -285,6 +290,59 @@ public class ChatController {
                             .build();
                 })
                 .concatWith(Flux.just(ServerSentEvent.<String>builder().data("[DONE]").build()));
+    }
+
+    /**
+     * 智能体流式对话接口（内部管理后台使用）
+     *
+     * 功能说明：
+     * - 根据 slug 查询业务智能体配置（Agent）
+     * - 使用智能体关联的模型、系统提示词等配置
+     * - 支持会话历史记忆（conversationId）
+     * - 返回流式响应
+     *
+     * @param slug           智能体标识（Agent.slug）
+     * @param message        用户消息
+     * @param conversationId 会话ID（可选，用于连续对话）
+     * @return 流式响应
+     */
+    @PostMapping(value = "/agents/{slug}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatWithAgentStream(
+            @PathVariable String slug,
+            @RequestBody String message,
+            @RequestParam(required = false) String conversationId) {
+
+        log.info("[ChatController] 智能体流式对话请求，slug: {}, conversationId: {}", slug, conversationId);
+
+        // 1. 根据 slug 查询智能体配置
+        Agent agent = agentService.findBySlug(slug);
+        if (agent == null) {
+            log.error("[ChatController] 智能体不存在，slug: {}", slug);
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .data("{\"error\":\"智能体不存在: " + slug + "\"}")
+                    .build());
+        }
+
+        // 2. 调用流式对话服务（支持会话历史）
+        return executionService.streamChatWithAgent(agent, message, conversationId)
+                .filter(content -> content != null && !content.isEmpty())
+                .map(content -> {
+                    String escapedContent = content.replace("\\", "\\\\")
+                            .replace("\"", "\\\"")
+                            .replace("\n", "\\n")
+                            .replace("\r", "\\r");
+                    String json = "{\"choices\":[{\"delta\":{\"content\":\"" + escapedContent + "\"}}]}";
+                    return ServerSentEvent.<String>builder()
+                            .data(json)
+                            .build();
+                })
+                .concatWith(Flux.just(
+                        ServerSentEvent.<String>builder()
+                                .data("[DONE]")
+                                .build()
+                ))
+                .doOnError(error -> log.error("[ChatController] 智能体流式对话失败，slug: {}, error: {}",
+                        slug, error.getMessage(), error));
     }
 }
 
