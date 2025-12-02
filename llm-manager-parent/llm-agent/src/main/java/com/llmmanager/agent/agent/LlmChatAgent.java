@@ -1,6 +1,7 @@
 package com.llmmanager.agent.agent;
 
 import com.llmmanager.agent.advisor.AdvisorManager;
+import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.agent.dto.ChatRequest;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
+import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -32,8 +34,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * - 自动管理 ChatModel 缓存
  * - 支持历史对话管理
  * - 集成对话日志记录
+ * - 支持工具调用（使用 Spring AI 原生 @Tool 注解）
  * - 通过 AdvisorManager 统一管理所有 Advisor
  */
+@Slf4j
 @Component
 public class LlmChatAgent {
 
@@ -46,6 +50,10 @@ public class LlmChatAgent {
     // 按需注入 MemoryAdvisor（可能为 null，如果禁用了历史功能）
     @Autowired(required = false)
     private MessageChatMemoryAdvisor memoryAdvisor;
+
+    // 工具管理器 - 管理 @Tool 注解的工具类
+    @Resource
+    private ToolFunctionManager toolFunctionManager;
 
     // 缓存 ChatModel 实例
     private static final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
@@ -100,9 +108,23 @@ public class LlmChatAgent {
             promptBuilder.system(request.getSystemPrompt());
         }
 
-        // 添加用户消息、options 和 advisors
+        // 添加用户消息
+        promptBuilder.user(request.getUserMessage());
+
+        // 如果启用工具，注册工具对象（使用 Spring AI 原生 @Tool 注解方式）
+        if (Boolean.TRUE.equals(request.getEnableTools())) {
+            // 获取工具对象（Bean 实例）
+            Object[] toolObjects = toolFunctionManager.getToolObjects(request.getToolNames());
+            if (toolObjects.length > 0) {
+                log.info("[LlmChatAgent] 启用工具调用，注册工具数: {}", toolObjects.length);
+                promptBuilder.tools(toolObjects);
+            } else {
+                log.warn("[LlmChatAgent] 启用工具调用，但没有可用的工具函数");
+            }
+        }
+
+        // 添加 options 和 advisors
         ChatResponse response = promptBuilder
-                .user(request.getUserMessage())
                 .options(optionsBuilder.build())
                 .advisors(advisor -> {
                     if (conversationId != null) {
@@ -163,9 +185,23 @@ public class LlmChatAgent {
             promptBuilder.system(request.getSystemPrompt());
         }
 
-        // 添加用户消息、options 和 advisors，执行流式请求
+        // 添加用户消息
+        promptBuilder.user(request.getUserMessage());
+
+        // 如果启用工具，注册工具对象（使用 Spring AI 原生 @Tool 注解方式）
+        if (Boolean.TRUE.equals(request.getEnableTools())) {
+            // 获取工具对象（Bean 实例）
+            Object[] toolObjects = toolFunctionManager.getToolObjects(request.getToolNames());
+            if (toolObjects.length > 0) {
+                log.info("[LlmChatAgent] 流式对话启用工具调用，注册工具数: {}", toolObjects.length);
+                promptBuilder.tools(toolObjects);
+            } else {
+                log.warn("[LlmChatAgent] 流式对话启用工具调用，但没有可用的工具函数");
+            }
+        }
+
+        // 添加 options 和 advisors，执行流式请求
         return promptBuilder
-                .user(request.getUserMessage())
                 .options(optionsBuilder.build())
                 .advisors(advisor -> {
                     if (conversationId != null) {

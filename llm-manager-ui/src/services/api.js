@@ -56,6 +56,9 @@ export default {
   createToken(data) { return apiClient.post('/tokens', data) },
   revokeToken(id) { return apiClient.post(`/tokens/${id}/revoke`) },
 
+  // Tools - 工具列表
+  getAvailableTools() { return apiClient.get('/chat/tools') },
+
   // Chat - 阻塞式
   chat(modelId, message) { return apiClient.post(`/chat/${modelId}`, message) },
   chatWithAgent(slug, message, token) {
@@ -100,6 +103,41 @@ export default {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ message })
+      },
+      onChunk,
+      onComplete,
+      onError
+    )
+  },
+
+  // Chat - 流式（带工具调用）
+  chatStreamWithTools(modelId, message, conversationId, toolNames, onChunk, onComplete, onError) {
+    const token = localStorage.getItem('satoken')
+
+    // 构建 URL 查询参数
+    const params = new URLSearchParams()
+    if (conversationId) {
+      params.append('conversationId', conversationId)
+    }
+    // 支持传递 toolNames 数组
+    if (toolNames && toolNames.length > 0) {
+      toolNames.forEach(name => params.append('toolNames', name))
+    }
+
+    const queryString = params.toString()
+    const url = queryString
+      ? `http://localhost:8080/api/chat/${modelId}/with-tools/stream?${queryString}`
+      : `http://localhost:8080/api/chat/${modelId}/with-tools/stream`
+
+    return streamFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          'satoken': token || ''
+        },
+        body: message
       },
       onChunk,
       onComplete,

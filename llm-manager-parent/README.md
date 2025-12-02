@@ -253,8 +253,8 @@ erDiagram
 - ✅ **ChatModel 抽象层**：支持多 LLM 提供商（OpenAiChatModelAdapter）
 - ✅ **ChatMemory 管理**：对话历史持久化到 MySQL
 - ✅ **LlmChatAgent**：同步/流式对话接口
-- ⏳ **Tool Layer**：工具调用抽象（Phase 2）
-- ⏳ **MCP 支持**：Model Context Protocol（Phase 2）
+- ✅ **Tool Layer**：Spring AI 原生 @Tool 注解工具调用
+- ⏳ **MCP 支持**：Model Context Protocol（Phase 3）
 - ⏳ **Vector Store**：向量存储集成（Phase 3）
 - ⏳ **Agent Framework**：ReactAgent 模式（Phase 4）
 
@@ -273,7 +273,9 @@ com.llmmanager.agent
 │   ├── mapper/       # MyBatis Mapper
 │   └── impl/         # 存储实现
 ├── agent/            # LlmChatAgent 核心类
-└── tool/             # 工具层（TODO）
+├── config/           # 配置类（ToolFunctionManager）
+├── tools/            # Spring AI 原生工具类
+└── dto/              # 请求 DTO
 ```
 
 ### llm-service（业务逻辑层）
@@ -303,9 +305,10 @@ com.llmmanager.agent
 - `ApiKeyController` - API Key 管理
 - `AuthController` - 用户认证
 - `ChannelController` - 渠道管理
-- `ChatController` - 对话接口
+- `ChatController` - 对话接口（含工具调用）
 - `ModelController` - 模型管理
 - `PromptController` - 提示词管理
+- `ToolController` - 工具管理（获取工具列表）
 
 **端口**：8080
 
@@ -732,7 +735,7 @@ sa-token:
   - [x] `ChatResponse` 响应封装
   - [x] `OpenAiChatModelAdapter` - OpenAI 适配器
 
-- [x] **ChatMemory 管理（Advisor）**
+- ✅ **ChatMemory 管理（Advisor）**
   - [x] `ChatMemoryStore` 接口
   - [x] `ChatMemoryManager` 内存管理器
   - [x] `ChatHistory` 实体（MySQL 存储）
@@ -758,58 +761,156 @@ llm-agent/src/main/java/com/llmmanager/agent/
 ├── advisor/          ✅ ChatMemoryStore, ChatMemoryManager, AdvisorManager
 ├── storage/          ✅ ChatHistory, ChatHistoryMapper, ChatMemoryStoreImpl
 ├── agent/            ✅ LlmChatAgent (重构)
-├── config/           ✅ ChatMemoryConfig (历史功能配置)
+├── config/           ✅ ChatMemoryConfig, ToolFunctionManager
+├── tools/            ✅ Spring AI 原生工具类
 └── dto/              ✅ ChatRequest (请求DTO)
 ```
 
 ---
 
-### ⏳ Phase 2：Tool Layer（工具层）
+### ✅ Phase 2：工具调用层（Tool Layer）- 已完成
 
 **目标**：支持 LLM 调用外部工具（Function Calling）
 
-#### llm-agent 新增组件
+#### 实现方案：Spring AI 原生 @Tool 注解
 
-- [ ] **Tool 抽象**
-  - [ ] `Tool` 接口（name, description, parameters, execute()）
-  - [ ] `ToolCall` - 工具调用请求
-  - [ ] `ToolResult` - 工具执行结果
-  - [ ] `ToolRegistry` - 工具注册中心
+采用 Spring AI 原生的 `@Tool` 和 `@ToolParam` 注解实现工具调用，而非自定义 Tool 接口。
 
-- [ ] **内置工具实现**
-  - [ ] `WebSearchTool` - 网络搜索
-  - [ ] `CalculatorTool` - 计算器
-  - [ ] `WeatherTool` - 天气查询
-  - [ ] `DatabaseQueryTool` - 数据库查询
+**优势**：
+- ✅ 使用 Spring AI 官方推荐方式
+- ✅ 自动解析方法签名生成 JSON Schema
+- ✅ LLM 自动决策何时调用工具
+- ✅ 与 ChatClient 无缝集成
 
-- [ ] **集成到 LlmChatAgent**
-  - [ ] 工具调用检测
-  - [ ] 自动执行工具
-  - [ ] 返回结果给 LLM
+#### 核心实现
 
-#### llm-service 业务支持
+**1. 工具类定义（使用 @Tool 注解）**
 
-- [ ] **Tool Service**
-  - [ ] `ToolService` - 工具管理
-  - [ ] `AgentToolService` - Agent-Tool 关联管理
-
-- [ ] **数据库表**
-  - [ ] `p_tools` - 工具定义表
-  - [ ] `p_agent_tools` - Agent-Tool 关联表
-
-#### llm-ops 后台支持
-
-- [ ] `ToolController` - 工具管理接口
-- [ ] `AgentToolController` - Agent 工具配置接口
-
-**预期效果**：
 ```java
-// Agent 可以调用工具
-Agent: "查询北京今天的天气"
--> LLM 识别需要调用 WeatherTool
--> 自动执行 WeatherTool.execute("北京")
--> 将结果返回给 LLM
--> LLM 生成最终回复
+@Slf4j
+@Component
+public class WeatherTools {
+
+    @Tool(description = "获取指定城市的当前天气信息，包括温度、天气状况、湿度等")
+    public WeatherResponse getWeather(
+            @ToolParam(description = "城市名称，例如：北京、上海、深圳") String city,
+            @ToolParam(description = "温度单位，可选值：celsius 或 fahrenheit") String unit) {
+
+        log.info("[WeatherTools] LLM 调用天气工具，城市: {}, 单位: {}", city, unit);
+        // 模拟天气数据
+        return new WeatherResponse(city, "晴朗", 25.0, "°C", 60, "天气晴好");
+    }
+
+    public record WeatherResponse(
+        String city, String condition, double temperature,
+        String unit, int humidity, String forecast
+    ) {}
+}
+```
+
+**2. ToolFunctionManager - 工具管理器**
+
+```java
+@Slf4j
+@Component
+public class ToolFunctionManager {
+
+    // 存储工具信息：工具名 -> ToolInfo
+    private final Map<String, ToolInfo> registeredTools = new ConcurrentHashMap<>();
+
+    public record ToolInfo(
+        String name,           // 工具名称（方法名）
+        String description,    // 工具描述
+        Object beanInstance,   // Bean 实例
+        String beanName,       // Bean 名称
+        Class<?> beanClass     // Bean 类
+    ) {}
+
+    @PostConstruct
+    public void discoverTools() {
+        // 自动扫描所有带 @Tool 注解的方法
+        // 注册到 registeredTools
+    }
+
+    // 获取工具对象（供 ChatClient.tools() 使用）
+    public Object[] getToolObjects(List<String> toolNames) {
+        // 返回 Bean 实例数组
+    }
+
+    // 获取所有工具（供前端展示）
+    public Map<String, String> getAllTools() {
+        // 返回 {工具名 -> 描述}
+    }
+}
+```
+
+**3. LlmChatAgent 集成**
+
+```java
+// 如果启用工具，注册工具对象
+if (Boolean.TRUE.equals(request.getEnableTools())) {
+    Object[] toolObjects = toolFunctionManager.getToolObjects(request.getToolNames());
+    if (toolObjects.length > 0) {
+        log.info("[LlmChatAgent] 启用工具调用，注册工具数: {}", toolObjects.length);
+        promptBuilder.tools(toolObjects);  // 使用 .tools() 传递工具对象
+    }
+}
+```
+
+#### 已实现的工具
+
+| 工具名 | 描述 | 参数 |
+|--------|------|------|
+| `getWeather` | 获取城市天气信息 | city, unit |
+| `calculate` | 执行数学计算 | operation, a, b |
+
+#### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `GET /api/tools` | GET | 获取所有工具列表 |
+| `GET /api/tools/{toolName}` | GET | 获取工具详情 |
+| `POST /api/chat/{modelId}/stream-flux-with-tools` | POST | 带工具调用的流式对话 |
+
+#### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── tools/                        # Spring AI 原生工具类
+│   ├── WeatherTools.java        # @Tool 天气工具
+│   └── CalculatorTools.java     # @Tool 计算器工具
+├── config/
+│   └── ToolFunctionManager.java # 工具管理器（自动发现 @Tool）
+└── agent/
+    └── LlmChatAgent.java        # 使用 .tools() 传递工具对象
+```
+
+#### 使用示例
+
+```java
+// 1. 定义工具类（使用 Spring AI @Tool 注解）
+@Component
+public class MyTools {
+    @Tool(description = "我的工具描述")
+    public String myTool(@ToolParam(description = "参数描述") String param) {
+        return "结果";
+    }
+}
+
+// 2. 工具自动发现（启动时 @PostConstruct）
+// ToolFunctionManager 会扫描所有 @Tool 注解的方法
+
+// 3. 前端选择工具
+// GET /api/tools 获取工具列表，用户选择要使用的工具
+
+// 4. 对话时传递工具名称
+// POST /api/chat/{modelId}/stream-flux-with-tools?toolNames=getWeather,calculate
+
+// 5. LLM 自动决策是否调用工具
+// 用户："北京今天天气怎么样？"
+// -> LLM 识别需要调用 getWeather 工具
+// -> 自动执行工具并返回结果
+// -> LLM 基于结果生成回复
 ```
 
 ---

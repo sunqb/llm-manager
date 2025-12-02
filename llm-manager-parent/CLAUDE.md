@@ -658,11 +658,18 @@ llm-agent/
 │       └── ChatMemoryStoreImpl.java
 ├── agent/                # Agent 执行层（✅ 已完成）
 │   └── LlmChatAgent.java
-├── tool/                 # 工具调用层（🔲 待实现）
+├── tool/                 # 工具调用层（✅ 已完成）
 │   ├── Tool.java
 │   ├── ToolCall.java
 │   ├── ToolResult.java
-│   └── ToolRegistry.java
+│   ├── ToolException.java
+│   ├── ToolRegistry.java
+│   ├── ToolExecutor.java
+│   ├── annotation/
+│   │   └── ToolComponent.java
+│   └── impl/
+│       ├── WeatherTool.java
+│       └── CalculatorTool.java
 ├── mcp/                  # MCP 支持（🔲 待实现）
 │   └── McpClient.java
 ├── graph/                # 工作流编排（🔲 待实现）
@@ -764,64 +771,190 @@ llmChatAgent.clearConversationHistory("conversation-123");
 
 ---
 
-### 阶段 2：工具调用层（Tool Layer）🔲 待实现
+### 阶段 2：工具调用层（Tool Layer）✅ 已完成
 
 #### 目标
-- 实现 Function Calling 支持
-- 定义 Tool 抽象接口
-- 创建 ToolRegistry 工具注册中心
-- 支持工具动态发现和调用
+- ✅ 实现 Function Calling 支持
+- ✅ 使用 Spring AI 原生 @Tool 注解
+- ✅ 创建 ToolFunctionManager 工具管理器
+- ✅ 支持工具动态发现和调用
+- ✅ 提供示例工具实现（天气、计算器）
+- ✅ 创建 ToolController 接口
+- ✅ 前端工具选择面板
+
+#### 实现方案：Spring AI 原生 @Tool 注解
+
+采用 Spring AI 原生的 `@Tool` 和 `@ToolParam` 注解实现工具调用，而非自定义 Tool 接口。
+
+**优势**：
+- ✅ 使用 Spring AI 官方推荐方式
+- ✅ 自动解析方法签名生成 JSON Schema
+- ✅ LLM 自动决策何时调用工具
+- ✅ 与 ChatClient 无缝集成
 
 #### 核心实现
 
-**1. Tool 抽象**
+**1. 工具类定义（使用 @Tool 注解）**
+
 ```java
-public interface Tool {
-    String getName();
-    String getDescription();
-    JsonSchema getParameterSchema();
-    ToolResult execute(Map<String, Object> parameters);
+@Slf4j
+@Component
+public class WeatherTools {
+
+    @Tool(description = "获取指定城市的当前天气信息，包括温度、天气状况、湿度等")
+    public WeatherResponse getWeather(
+            @ToolParam(description = "城市名称，例如：北京、上海、深圳") String city,
+            @ToolParam(description = "温度单位，可选值：celsius 或 fahrenheit") String unit) {
+
+        log.info("[WeatherTools] LLM 调用天气工具，城市: {}, 单位: {}", city, unit);
+        // 模拟天气数据
+        return new WeatherResponse(city, "晴朗", 25.0, "°C", 60, "天气晴好");
+    }
+
+    public record WeatherResponse(
+        String city, String condition, double temperature,
+        String unit, int humidity, String forecast
+    ) {}
 }
 ```
 
-**2. ToolRegistry**
+**2. ToolFunctionManager - 工具管理器**
+
 ```java
+@Slf4j
 @Component
-public class ToolRegistry {
-    void registerTool(Tool tool);
-    Tool getTool(String name);
-    List<Tool> getAllTools();
+public class ToolFunctionManager {
+
+    // 存储工具信息：工具名 -> ToolInfo
+    private final Map<String, ToolInfo> registeredTools = new ConcurrentHashMap<>();
+
+    public record ToolInfo(
+        String name,           // 工具名称（方法名）
+        String description,    // 工具描述
+        Object beanInstance,   // Bean 实例
+        String beanName,       // Bean 名称
+        Class<?> beanClass     // Bean 类
+    ) {}
+
+    @PostConstruct
+    public void discoverTools() {
+        // 自动扫描所有带 @Tool 注解的方法
+        // 注册到 registeredTools
+    }
+
+    // 获取工具对象（供 ChatClient.tools() 使用）
+    public Object[] getToolObjects(List<String> toolNames) {
+        // 返回 Bean 实例数组
+    }
+
+    // 获取所有工具（供前端展示）
+    public Map<String, String> getAllTools() {
+        // 返回 {工具名 -> 描述}
+    }
+
+    // 获取所有工具名称
+    public List<String> getAllToolNames() { ... }
+
+    // 检查工具是否存在
+    public boolean hasTool(String toolName) { ... }
+
+    // 获取工具详情
+    public ToolInfo getToolInfo(String toolName) { ... }
 }
 ```
 
-**3. ToolCall 流程**
+**3. LlmChatAgent 集成**
+
 ```java
-// 1. ChatModel 返回 tool_call 请求
-// 2. ToolRegistry 查找工具
-// 3. 执行工具并获取结果
-// 4. 将结果作为 ToolMessage 回传给模型
+// 如果启用工具，注册工具对象（使用 Spring AI 原生 @Tool 注解方式）
+if (Boolean.TRUE.equals(request.getEnableTools())) {
+    Object[] toolObjects = toolFunctionManager.getToolObjects(request.getToolNames());
+    if (toolObjects.length > 0) {
+        log.info("[LlmChatAgent] 启用工具调用，注册工具数: {}", toolObjects.length);
+        promptBuilder.tools(toolObjects);  // 使用 .tools() 传递工具对象
+    }
+}
 ```
 
-#### 示例工具实现
+#### 已实现的工具
+
+| 工具名 | 类 | 描述 | 参数 |
+|--------|-----|------|------|
+| `getWeather` | WeatherTools | 获取城市天气信息 | city, unit |
+| `calculate` | CalculatorTools | 执行数学计算 | operation, a, b |
+
+#### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `GET /api/tools` | GET | 获取所有工具列表 |
+| `GET /api/tools/{toolName}` | GET | 获取工具详情 |
+| `GET /api/tools/{toolName}/exists` | GET | 检查工具是否存在 |
+| `POST /api/chat/{modelId}/stream-flux-with-tools` | POST | 带工具调用的流式对话 |
+
+#### 文件结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── tools/                        # Spring AI 原生工具类
+│   ├── WeatherTools.java        # @Tool 天气工具
+│   └── CalculatorTools.java     # @Tool 计算器工具
+├── config/
+│   └── ToolFunctionManager.java # 工具管理器（自动发现 @Tool）
+└── agent/
+    └── LlmChatAgent.java        # 使用 .tools() 传递工具对象
+
+llm-ops/src/main/java/com/llmmanager/ops/controller/
+└── ToolController.java          # 工具列表接口
+```
+
+#### 前端工具选择
+
+前端 `ChatView.vue` 提供美观的工具选择面板：
+- 工具开关：一键启用/禁用工具调用
+- 工具选择面板：下拉展示所有可用工具
+- 全选/取消全选：快速批量选择
+- 工具描述：悬停查看详细描述
+
+#### 使用示例
+
 ```java
+// 1. 定义工具类（使用 Spring AI @Tool 注解）
 @Component
-public class WeatherTool implements Tool {
-    @Override
-    public String getName() {
-        return "get_weather";
+public class MyTools {
+    @Tool(description = "我的工具描述")
+    public String myTool(@ToolParam(description = "参数描述") String param) {
+        return "结果";
     }
+}
 
-    @Override
-    public String getDescription() {
-        return "获取指定城市的天气信息";
-    }
+// 2. 工具自动发现（启动时 @PostConstruct）
+// ToolFunctionManager 会扫描所有 @Tool 注解的方法
 
-    @Override
-    public ToolResult execute(Map<String, Object> params) {
-        String city = (String) params.get("city");
-        // 调用天气API
-        return ToolResult.success(weatherData);
-    }
+// 3. 前端选择工具
+// GET /api/tools 获取工具列表，用户选择要使用的工具
+
+// 4. 对话时传递工具名称
+// POST /api/chat/{modelId}/stream-flux-with-tools?toolNames=getWeather,calculate
+
+// 5. LLM 自动决策是否调用工具
+// 用户："北京今天天气怎么样？"
+// -> LLM 识别需要调用 getWeather 工具
+// -> 自动执行工具并返回结果
+// -> LLM 基于结果生成回复
+```
+
+#### ChatRequest 工具相关参数
+
+```java
+@Data
+@Builder
+public class ChatRequest {
+    // ... 其他参数
+
+    // 工具调用相关
+    private Boolean enableTools;       // 是否启用工具调用
+    private List<String> toolNames;    // 指定可用工具（null 表示全部）
 }
 ```
 

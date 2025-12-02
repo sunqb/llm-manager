@@ -28,6 +28,7 @@ LLM Manager 是一个现代化的 LLM 管理系统，旨在简化大语言模型
 - **多模型管理**：支持多个 LLM 提供商，统一管理
 - **智能代理（Agent）**：配置系统提示词和参数，创建专用 AI 助手
 - **实时流式对话**：基于 SSE 的真正实时流式输出
+- **工具调用（Function Calling）**：支持 LLM 自动调用外部工具（天气查询、计算器等）
 - **Markdown 渲染**：完整支持 Markdown 格式，包括代码高亮、表格、列表等
 - **API Key 管理**：为外部应用提供安全的 API 访问
 - **用户认证**：基于 Sa-Token 的安全认证机制
@@ -566,6 +567,20 @@ npm install marked dompurify
 - 功能建议：提交 Feature Request
 
 ## 更新日志
+
+### v2.1.0 (2025-12-02) 🆕
+
+**工具调用功能（Function Calling）**
+
+- 🆕 新增：Spring AI 原生 @Tool 注解支持
+- 🆕 新增：ToolFunctionManager 工具管理器（自动发现 @Tool 注解）
+- 🆕 新增：WeatherTools 天气查询工具
+- 🆕 新增：CalculatorTools 计算器工具
+- 🆕 新增：ToolController 工具列表接口
+- 🆕 新增：前端工具选择面板（全选/取消全选）
+- 🆕 新增：带工具调用的流式对话接口
+- 🔄 重构：LlmChatAgent 使用 .tools() 传递工具对象
+- 🗑️ 移除：旧的自定义 Tool 接口和适配器代码
 
 ### v2.0.0-dev (2025-12-01) 🚀
 

@@ -1,6 +1,8 @@
 package com.llmmanager.ops.controller;
 
+import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.service.orchestration.LlmExecutionService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -8,17 +10,22 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import javax.annotation.Resource;
-import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
 
     @Resource
     private LlmExecutionService executionService;
+
+    @Resource
+    private ToolFunctionManager toolFunctionManager;
 
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -188,4 +195,96 @@ public class ChatController {
                                    @RequestBody Map<String, Object> variables) {
         return executionService.chatWithTemplate(modelId, templateContent, variables);
     }
+
+    /**
+     * 获取所有可用的工具列表（供前端展示和选择）
+     *
+     * @return 工具列表 {name -> description}
+     */
+    @GetMapping("/tools")
+    public Map<String, Object> getAvailableTools() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("tools", toolFunctionManager.getAllTools());
+        return response;
+    }
+
+    /**
+     * 带工具调用的对话接口（使用 Spring AI 原生 Function Calling）
+     *
+     * 工作流程（AI 自动决策）：
+     * 1. 用户发送消息
+     * 2. LLM 自动判断是否需要调用工具（无需手动正则匹配）
+     * 3. 如果需要，LLM 自动调用已注册的工具函数
+     * 4. LLM 基于工具返回结果生成最终回复
+     *
+     * 关键：将工具函数注册到 ChatClient，让 AI 自己决定何时调用
+     *
+     * @param modelId        模型ID
+     * @param message        用户消息
+     * @param conversationId 会话ID（可选）
+     * @param toolNames      指定工具列表（可选，逗号分隔，null 表示使用所有工具）
+     * @return LLM 回复
+     */
+    @PostMapping("/{modelId}/with-tools")
+    public Map<String, Object> chatWithTools(
+            @PathVariable Long modelId,
+            @RequestBody String message,
+            @RequestParam(required = false) String conversationId,
+            @RequestParam(required = false) List<String> toolNames) {
+
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            // 调用带工具支持的对话服务
+            // LLM 会自动判断是否需要调用工具
+            String llmResponse = executionService.chatWithTools(modelId, message, conversationId, toolNames);
+
+            response.put("success", true);
+            response.put("message", llmResponse);
+            response.put("toolsUsed", toolNames != null ? toolNames : toolFunctionManager.getAllToolNames());
+
+            return response;
+
+        } catch (Exception e) {
+            log.error("[ChatController] 工具调用对话失败", e);
+            response.put("success", false);
+            response.put("error", "对话失败: " + e.getMessage());
+            return response;
+        }
+    }
+
+    /**
+     * 带工具调用的流式对话接口（使用 Spring AI 原生 Function Calling）
+     *
+     * @param modelId        模型ID
+     * @param message        用户消息
+     * @param conversationId 会话ID（可选）
+     * @param toolNames      指定工具列表（可选，逗号分隔，null 表示使用所有工具）
+     * @return 流式响应
+     */
+    @PostMapping(value = "/{modelId}/with-tools/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatWithToolsStream(
+            @PathVariable Long modelId,
+            @RequestBody String message,
+            @RequestParam(required = false) String conversationId,
+            @RequestParam(required = false) List<String> toolNames) {
+
+        // 调用带工具支持的流式对话服务
+        // LLM 会自动判断是否需要调用工具
+        return executionService.streamChatWithTools(modelId, message, conversationId, toolNames)
+                .filter(content -> content != null && !content.isEmpty())
+                .map(content -> {
+                    String escapedContent = content.replace("\\", "\\\\")
+                            .replace("\"", "\\\"")
+                            .replace("\n", "\\n")
+                            .replace("\r", "\\r");
+                    String json = "{\"choices\":[{\"delta\":{\"content\":\"" + escapedContent + "\"}}]}";
+                    return ServerSentEvent.<String>builder()
+                            .data(json)
+                            .build();
+                })
+                .concatWith(Flux.just(ServerSentEvent.<String>builder().data("[DONE]").build()));
+    }
 }
+

@@ -90,6 +90,31 @@ public class ChatRequest {
      */
     private Integer maxHistoryMessages;
 
+    // ==================== 工具调用相关 ====================
+
+    /**
+     * 是否启用工具调用（Function Calling）
+     */
+    @Builder.Default
+    private Boolean enableTools = false;
+
+    /**
+     * 指定可用的工具名称列表（null 表示使用所有已注册的工具）
+     */
+    private java.util.List<String> toolNames;
+
+    /**
+     * 工具调用模式（auto: 自动决定，none: 不使用工具，required: 必须使用工具）
+     */
+    @Builder.Default
+    private String toolChoice = "auto";
+
+    /**
+     * 最大工具调用轮次（防止无限循环）
+     */
+    @Builder.Default
+    private Integer maxToolRounds = 5;
+
     // ==================== 其他参数 ====================
 
     /**

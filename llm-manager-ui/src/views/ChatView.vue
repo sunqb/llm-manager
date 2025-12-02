@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import api from '../services/api'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -31,6 +31,10 @@ const agents = ref([])
 const selectedModelId = ref(null)
 const selectedAgentSlug = ref(null)
 const useAgent = ref(false)
+const useTools = ref(false) // 是否启用工具调用
+const showToolPanel = ref(false) // 是否显示工具选择面板
+const availableTools = ref({}) // 可用的工具列表 {name -> description}
+const selectedTools = ref([]) // 已选择的工具名称列表
 const messages = ref([])
 const userInput = ref('')
 const loading = ref(false)
@@ -56,9 +60,22 @@ const startNewConversation = () => {
 }
 
 const load = async () => {
-    const [mRes, aRes] = await Promise.all([api.getModels(), api.getAgents()])
+    const [mRes, aRes, toolsRes] = await Promise.all([
+        api.getModels(),
+        api.getAgents(),
+        api.getAvailableTools()
+    ])
     models.value = mRes.data
     agents.value = aRes.data
+
+    // 加载工具列表
+    if (toolsRes.data.success) {
+        availableTools.value = toolsRes.data.tools || {}
+        // 默认选中所有工具
+        selectedTools.value = Object.keys(availableTools.value)
+        console.log('[工具列表] 已加载:', selectedTools.value)
+    }
+
     if (models.value.length) selectedModelId.value = models.value[0].id
     if (agents.value.length) selectedAgentSlug.value = agents.value[0].slug
 
@@ -82,6 +99,16 @@ const scrollToBottom = () => {
             chatContainer.value.scrollTop = chatContainer.value.scrollHeight
         }
     })
+}
+
+// 全选/取消全选工具
+const toggleAllTools = () => {
+    const allToolNames = Object.keys(availableTools.value)
+    if (selectedTools.value.length === allToolNames.length) {
+        selectedTools.value = []
+    } else {
+        selectedTools.value = [...allToolNames]
+    }
 }
 
 // Markdown 渲染函数
@@ -141,29 +168,51 @@ const send = async () => {
                 }
             )
         } else {
-            // 使用流式API（带 conversationId）
-            await api.chatStream(
-                selectedModelId.value,
-                text,
-                conversationId.value, // 传递会话ID
-                (chunk) => {
-                    // 实时追加内容
-                    messages.value[assistantMsgIndex].content += chunk
-                },
-                () => {
-                    // 完成后保存到 localStorage
-                    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
-                    loading.value = false
-                },
-                (error) => {
-                    // 错误处理
-                    messages.value[assistantMsgIndex] = {
-                        role: 'error',
-                        content: '错误: ' + (error.message || '请求失败')
+            // 根据 useTools 状态选择不同的 API
+            if (useTools.value) {
+                // 使用工具调用流式API（传递选中的工具列表）
+                await api.chatStreamWithTools(
+                    selectedModelId.value,
+                    text,
+                    conversationId.value,
+                    selectedTools.value, // 传递选中的工具列表
+                    (chunk) => {
+                        messages.value[assistantMsgIndex].content += chunk
+                    },
+                    () => {
+                        localStorage.setItem('chatMessages', JSON.stringify(messages.value))
+                        loading.value = false
+                    },
+                    (error) => {
+                        messages.value[assistantMsgIndex] = {
+                            role: 'error',
+                            content: '错误: ' + (error.message || '请求失败')
+                        }
+                        loading.value = false
                     }
-                    loading.value = false
-                }
-            )
+                )
+            } else {
+                // 使用普通流式API
+                await api.chatStream(
+                    selectedModelId.value,
+                    text,
+                    conversationId.value,
+                    (chunk) => {
+                        messages.value[assistantMsgIndex].content += chunk
+                    },
+                    () => {
+                        localStorage.setItem('chatMessages', JSON.stringify(messages.value))
+                        loading.value = false
+                    },
+                    (error) => {
+                        messages.value[assistantMsgIndex] = {
+                            role: 'error',
+                            content: '错误: ' + (error.message || '请求失败')
+                        }
+                        loading.value = false
+                    }
+                )
+            }
         }
     } catch (e) {
         messages.value[assistantMsgIndex] = {
@@ -175,6 +224,20 @@ const send = async () => {
 }
 
 onMounted(load)
+
+// 点击外部关闭工具面板
+const toolPanelRef = ref(null)
+const handleClickOutside = (event) => {
+    if (showToolPanel.value && toolPanelRef.value && !toolPanelRef.value.contains(event.target)) {
+        showToolPanel.value = false
+    }
+}
+onMounted(() => {
+    document.addEventListener('click', handleClickOutside)
+})
+onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <template>
@@ -197,10 +260,55 @@ onMounted(load)
                 </button>
             </div>
 
-            <div v-if="!useAgent" class="flex items-center gap-2 flex-grow max-w-md">
-                <select v-model="selectedModelId" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+            <div v-if="!useAgent" class="flex items-center gap-2 flex-grow max-w-2xl">
+                <select v-model="selectedModelId" class="flex-grow px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
                     <option v-for="m in models" :key="m.id" :value="m.id">📦 {{ m.name }} ({{ m.modelIdentifier }})</option>
                 </select>
+                <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用工具调用（如天气查询等）">
+                    <input type="checkbox" v-model="useTools" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
+                    <span class="text-sm text-slate-700">🔧 工具</span>
+                </label>
+                <!-- 工具选择下拉面板（仅当启用工具时显示） -->
+                <div v-if="useTools && Object.keys(availableTools).length > 0" class="relative" ref="toolPanelRef">
+                    <button
+                        @click="showToolPanel = !showToolPanel"
+                        class="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors"
+                        :class="{ 'ring-2 ring-indigo-500': showToolPanel }"
+                    >
+                        <span class="text-slate-700">已选 {{ selectedTools.length }}/{{ Object.keys(availableTools).length }}</span>
+                        <svg class="w-4 h-4 text-slate-400 transition-transform" :class="{ 'rotate-180': showToolPanel }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </button>
+                    <!-- 下拉面板 -->
+                    <div v-if="showToolPanel" class="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 min-w-[200px] max-h-[240px] overflow-y-auto">
+                        <div class="p-2 border-b border-slate-100 flex justify-between items-center">
+                            <span class="text-xs text-slate-500">选择工具</span>
+                            <button @click="toggleAllTools" class="text-xs text-indigo-600 hover:text-indigo-800">
+                                {{ selectedTools.length === Object.keys(availableTools).length ? '取消全选' : '全选' }}
+                            </button>
+                        </div>
+                        <div class="p-1">
+                            <label
+                                v-for="(desc, name) in availableTools"
+                                :key="name"
+                                class="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer"
+                                :title="desc"
+                            >
+                                <input
+                                    type="checkbox"
+                                    :value="name"
+                                    v-model="selectedTools"
+                                    class="mt-0.5 w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500"
+                                />
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm text-slate-700 truncate">{{ name }}</div>
+                                    <div class="text-xs text-slate-400 truncate">{{ desc }}</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div v-else class="flex items-center gap-2 flex-grow max-w-xl">

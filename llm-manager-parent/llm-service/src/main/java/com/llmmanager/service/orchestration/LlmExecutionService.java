@@ -15,6 +15,7 @@ import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
 import javax.annotation.Resource;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -243,6 +244,87 @@ public class LlmExecutionService {
                 .temperature(temperature)
                 .systemPrompt(systemPrompt)
                 .userMessage(userMessage)
+                .build();
+    }
+
+    /**
+     * 带工具调用的对话（使用所有工具）
+     * LLM 会自动判断是否需要调用工具
+     */
+    public String chatWithTools(Long modelId, String userMessage, String conversationId) {
+        return chatWithTools(modelId, userMessage, conversationId, null);
+    }
+
+    /**
+     * 带工具调用的对话（指定工具列表）
+     * LLM 会自动判断是否需要调用工具
+     *
+     * @param modelId        模型ID
+     * @param userMessage    用户消息
+     * @param conversationId 会话ID
+     * @param toolNames      指定的工具名称列表（null 表示使用所有已注册的工具）
+     */
+    public String chatWithTools(Long modelId, String userMessage, String conversationId, List<String> toolNames) {
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
+
+        Channel channel = getChannel(model);
+        ChatRequest request = buildChatRequestWithTools(channel, model, userMessage, null, model.getTemperature(), toolNames);
+        return llmChatAgent.chat(request, conversationId);
+    }
+
+    /**
+     * 带工具调用的流式对话（使用所有工具）
+     * LLM 会自动判断是否需要调用工具
+     */
+    public Flux<String> streamChatWithTools(Long modelId, String userMessage, String conversationId) {
+        return streamChatWithTools(modelId, userMessage, conversationId, null);
+    }
+
+    /**
+     * 带工具调用的流式对话（指定工具列表）
+     * LLM 会自动判断是否需要调用工具
+     *
+     * @param modelId        模型ID
+     * @param userMessage    用户消息
+     * @param conversationId 会话ID
+     * @param toolNames      指定的工具名称列表（null 表示使用所有已注册的工具）
+     */
+    public Flux<String> streamChatWithTools(Long modelId, String userMessage, String conversationId, List<String> toolNames) {
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
+
+        Channel channel = getChannel(model);
+        ChatRequest request = buildChatRequestWithTools(channel, model, userMessage, null, model.getTemperature(), toolNames);
+        return llmChatAgent.streamChat(request, conversationId);
+    }
+
+    /**
+     * 构建ChatRequest（启用工具调用）
+     *
+     * @param toolNames 指定的工具名称列表（null 表示使用所有已注册的工具）
+     */
+    private ChatRequest buildChatRequestWithTools(Channel channel, LlmModel model,
+                                                  String userMessage, String systemPrompt, Double temperature,
+                                                  List<String> toolNames) {
+        // 优先使用 Channel 配置，没有则使用默认配置
+        String apiKey = StringUtils.hasText(channel.getApiKey()) ? channel.getApiKey() : defaultApiKey;
+        String baseUrl = StringUtils.hasText(channel.getBaseUrl()) ? channel.getBaseUrl() : defaultBaseUrl;
+
+        return ChatRequest.builder()
+                .channelId(channel.getId())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelIdentifier(model.getModelIdentifier())
+                .temperature(temperature)
+                .systemPrompt(systemPrompt)
+                .userMessage(userMessage)
+                .enableTools(true)  // 启用工具调用
+                .toolNames(toolNames)  // 指定工具列表（null 表示使用所有）
                 .build();
     }
 
