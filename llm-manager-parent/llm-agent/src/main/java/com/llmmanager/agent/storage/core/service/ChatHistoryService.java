@@ -51,6 +51,22 @@ public interface ChatHistoryService {
     List<String> findAllConversationIds();
 
     /**
+     * 统计指定会话的消息数量
+     *
+     * @param conversationId 会话ID
+     * @return 消息数量
+     */
+    int countByConversationId(String conversationId);
+
+    /**
+     * 获取指定会话的最大消息序号
+     *
+     * @param conversationId 会话ID
+     * @return 最大消息序号，如果没有记录则返回null
+     */
+    Integer getMaxMessageIndex(String conversationId);
+
+    /**
      * 软删除指定会话的所有历史
      *
      * @param conversationId 会话ID

@@ -77,6 +77,26 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
     }
 
     @Override
+    public int countByConversationId(String conversationId) {
+        if (conversationId == null) {
+            return 0;
+        }
+
+        LambdaQueryWrapper<ChatHistory> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(ChatHistory::getConversationId, conversationId);
+
+        return Math.toIntExact(chatHistoryMapper.selectCount(queryWrapper));
+    }
+
+    @Override
+    public Integer getMaxMessageIndex(String conversationId) {
+        if (conversationId == null) {
+            return null;
+        }
+        return chatHistoryMapper.getMaxMessageIndex(conversationId);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteByConversationId(String conversationId) {
         if (conversationId == null) {

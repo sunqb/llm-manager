@@ -34,10 +34,25 @@ public class MybatisChatMemoryRepository implements ChatMemoryRepository {
             return;
         }
 
+        // 查询数据库中已有的最大消息序号
+        Integer maxIndex = chatHistoryService.getMaxMessageIndex(conversationId);
+        int startIndex = (maxIndex == null) ? 0 : maxIndex + 1;
+
+        // 只保存增量部分（新增的消息）
+        if (messages.size() <= startIndex) {
+            // 没有新消息需要保存
+            return;
+        }
+
+        // 获取需要新增的消息（跳过已存在的部分）
+        List<org.springframework.ai.chat.messages.Message> newMessages = messages.subList(startIndex, messages.size());
+
         List<ChatHistory> histories = new ArrayList<>();
-        for (org.springframework.ai.chat.messages.Message message : messages) {
+        int currentIndex = startIndex;
+        for (org.springframework.ai.chat.messages.Message message : newMessages) {
             ChatHistory chatHistory = new ChatHistory();
             chatHistory.setConversationId(conversationId);
+            chatHistory.setMessageIndex(currentIndex);  // 设置消息序号
             chatHistory.setContent(message.getText());
             chatHistory.setMessageType(mapMessageType(message));
 
@@ -47,6 +62,7 @@ public class MybatisChatMemoryRepository implements ChatMemoryRepository {
             }
 
             histories.add(chatHistory);
+            currentIndex++;
         }
 
         chatHistoryService.saveBatch(histories);

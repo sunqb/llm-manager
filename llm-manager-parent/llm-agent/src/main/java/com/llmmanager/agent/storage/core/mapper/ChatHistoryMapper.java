@@ -32,4 +32,13 @@ public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
     @Update("UPDATE a_chat_history SET is_delete = 1, update_time = NOW() " +
             "WHERE create_time < #{expireTime} AND is_delete = 0")
     int deleteExpiredMessages(@Param("expireTime") LocalDateTime expireTime);
+
+    /**
+     * 获取指定会话的最大消息序号
+     * @param conversationId 会话ID
+     * @return 最大消息序号，如果没有记录则返回null
+     */
+    @Select("SELECT MAX(message_index) FROM a_chat_history " +
+            "WHERE conversation_id = #{conversationId} AND is_delete = 0")
+    Integer getMaxMessageIndex(@Param("conversationId") String conversationId);
 }

@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS p_api_key (
 CREATE TABLE IF NOT EXISTS a_chat_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     conversation_id VARCHAR(255) NOT NULL COMMENT '会话ID',
+    message_index INT NOT NULL DEFAULT 0 COMMENT '消息序号（同一会话内从0开始递增）',
     message_type VARCHAR(20) NOT NULL COMMENT '消息类型：SYSTEM/USER/ASSISTANT/TOOL',
     content TEXT NOT NULL COMMENT '消息内容',
     metadata TEXT COMMENT '元数据（JSON格式）',
@@ -124,5 +125,6 @@ CREATE TABLE IF NOT EXISTS a_chat_history (
     is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
     INDEX idx_conversation_id (conversation_id),
     INDEX idx_create_time (create_time),
-    INDEX idx_is_delete (is_delete)
+    INDEX idx_is_delete (is_delete),
+    UNIQUE INDEX uk_conv_msg_idx (conversation_id, message_index) COMMENT '会话ID+消息序号唯一约束'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='聊天历史表';

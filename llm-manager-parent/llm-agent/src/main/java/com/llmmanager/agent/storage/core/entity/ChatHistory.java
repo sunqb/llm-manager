@@ -28,6 +28,11 @@ public class ChatHistory extends BaseEntity {
     private String conversationId;
 
     /**
+     * 消息序号（同一会话内从0开始递增）
+     */
+    private Integer messageIndex;
+
+    /**
      * 消息类型：SYSTEM/USER/ASSISTANT/TOOL
      */
     private String messageType;
