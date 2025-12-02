@@ -1,20 +1,18 @@
 package com.llmmanager.ops.controller;
 
 import com.llmmanager.service.core.entity.Prompt;
-import com.llmmanager.service.core.PromptService;
+import com.llmmanager.service.core.service.PromptService;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/prompts")
 public class PromptController {
 
-    private final PromptService promptService;
-
-    public PromptController(PromptService promptService) {
-        this.promptService = promptService;
-    }
+    @Resource
+    private PromptService promptService;
 
     @GetMapping
     public List<Prompt> getAll() {

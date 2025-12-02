@@ -439,6 +439,195 @@ java -jar llm-openapi/target/llm-openapi-0.0.1-SNAPSHOT.jar
 - **默认账号**: `admin` / `123456`
 - **前端界面**: 需要启动 `llm-manager-ui` 项目（Vue 3）
 
+## 💬 会话历史管理
+
+### 设计理念
+
+**前端控制会话流程，后端负责存储和加载**：
+- ✅ **前端决定**：何时开始新对话（生成新 UUID）
+- ✅ **前端决定**：何时继续对话（复用 conversationId）
+- ✅ **后端职责**：接收 conversationId 并加载/保存历史
+
+### 前端使用方式
+
+#### 生成 conversationId
+
+```javascript
+// 生成不含"-"的 UUID
+const conversationId = crypto.randomUUID().replace(/-/g, '')
+```
+
+#### API 调用
+
+```javascript
+// 带历史对话（传递 conversationId）
+const url = `/api/chat/${modelId}/stream-flux?conversationId=${conversationId}`
+
+fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain' },
+  body: userMessage
+})
+
+// 无历史对话（不传 conversationId，性能最优）
+const url = `/api/chat/${modelId}/stream-flux`
+
+fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain' },
+  body: userMessage
+})
+```
+
+#### 完整示例
+
+参考 [`FRONTEND_EXAMPLE.md`](./FRONTEND_EXAMPLE.md) 查看完整的 Vue.js 示例代码，包括：
+- localStorage 持久化
+- 新对话 vs 继续对话
+- 流式响应处理
+- 自动会话恢复
+
+### 后端实现
+
+#### Controller 层
+
+```java
+@PostMapping(value = "/{modelId}/stream-flux", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux<ServerSentEvent<String>> chatStreamFlux(
+        @PathVariable Long modelId,
+        @RequestBody String message,
+        @RequestParam(required = false) String conversationId) { // conversationId 可选
+
+    return executionService.streamChat(modelId, message, conversationId)
+        // ...
+}
+```
+
+#### Service 层
+
+```java
+public Flux<String> streamChat(Long modelId, String userMessage, String conversationId) {
+    // 只有前端传入了 conversationId 才启用历史对话
+    if (conversationId != null && !conversationId.trim().isEmpty()) {
+        // 启用 MemoryAdvisor，加载历史对话
+        return executeStreamRequest(model, userMessage, null, temperature, conversationId);
+    } else {
+        // 不添加 MemoryAdvisor，无数据库查询，性能最优
+        return executeStreamRequest(model, userMessage, null, temperature, null);
+    }
+}
+```
+
+#### Agent 层
+
+```java
+private ChatClient createChatClient(ChatRequest request, String conversationId) {
+    ChatModel chatModel = getOrCreateChatModel(request);
+    ChatClient.Builder builder = ChatClient.builder(chatModel);
+
+    // 按需添加 MemoryAdvisor：只有需要历史对话时才添加
+    if (conversationId != null && memoryAdvisor != null) {
+        builder.defaultAdvisors(memoryAdvisor);
+    }
+
+    return builder.build();
+}
+```
+
+### 性能优化
+
+**问题**: 之前所有请求都自动添加 MemoryAdvisor，导致每次请求都查询数据库（60-220ms 延迟）
+
+**解决方案**:
+1. ❌ **移除自动注册**: MemoryAdvisor 不再自动注册到 AdvisorManager
+2. ✅ **按需启用**: 只有 `conversationId != null` 时才添加 MemoryAdvisor
+3. ✅ **默认快速**: 无 conversationId 时，无数据库查询，性能最优
+
+**性能对比**:
+| 场景 | 启用历史 | 数据库查询 | 启动延迟 |
+|------|---------|-----------|---------|
+| **修改前** | 强制启用 | ✅ 每次查询 | 60-220ms |
+| **修改后（带 conversationId）** | 按需启用 | ✅ 查询历史 | ~50ms |
+| **修改后（无 conversationId）** | 不启用 | ❌ 无查询 | ~5ms |
+
+### 数据库表结构
+
+```sql
+CREATE TABLE a_chat_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(255) NOT NULL COMMENT '会话ID（前端生成的UUID）',
+    message_type VARCHAR(20) NOT NULL COMMENT '消息类型：SYSTEM/USER/ASSISTANT',
+    content TEXT NOT NULL COMMENT '消息内容',
+    metadata JSON COMMENT '元数据',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    create_by VARCHAR(64) DEFAULT 'system',
+    update_by VARCHAR(64) DEFAULT 'system',
+    is_delete TINYINT DEFAULT 0 COMMENT '逻辑删除：0=正常，1=删除',
+    INDEX idx_conversation_id (conversation_id),
+    INDEX idx_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话历史记录表';
+```
+
+### 使用场景
+
+#### 场景 1：单次对话（不需要历史）
+
+```bash
+# 不传 conversationId
+curl -X POST http://localhost:8080/api/chat/1/stream-flux \
+  -H "Content-Type: text/plain" \
+  -d "你好"
+
+# 后端行为：
+# - conversationId = null
+# - 不添加 MemoryAdvisor
+# - 不查询数据库
+# - 性能最优
+```
+
+#### 场景 2：连续对话（需要历史）
+
+```bash
+# 传递 conversationId
+curl -X POST "http://localhost:8080/api/chat/1/stream-flux?conversationId=abc123def456" \
+  -H "Content-Type: text/plain" \
+  -d "你好"
+
+# 后端行为：
+# - conversationId = "abc123def456"
+# - 添加 MemoryAdvisor
+# - 查询数据库加载历史
+# - 支持上下文连续对话
+```
+
+#### 场景 3：新对话 vs 继续对话
+
+**前端控制**:
+```javascript
+// 新对话：生成新的 conversationId
+function startNewConversation() {
+    conversationId = crypto.randomUUID().replace(/-/g, '')
+    messages = []
+    localStorage.setItem('conversationId', conversationId)
+}
+
+// 继续对话：复用现有 conversationId
+function continueConversation() {
+    // 保持 conversationId 不变
+    // 继续发送消息
+}
+```
+
+### API 端点
+
+| 端点 | 支持 conversationId | 用途 |
+|------|-------------------|------|
+| `POST /api/chat/{modelId}/stream-flux` | ✅ 可选 | 流式对话（推荐） |
+| `POST /api/chat/{modelId}/stream-with-reasoning` | ✅ 可选 | 流式对话（支持 reasoning） |
+| `POST /api/chat/{modelId}/stream` | ✅ 可选 | 流式对话（SseEmitter） |
+| `POST /api/chat/{modelId}` | ❌ 不支持 | 同步对话 |
+
 ## ⚙️ 配置说明
 
 ### 数据源配置
@@ -554,15 +743,23 @@ sa-token:
   - [x] 使用新的 Message 抽象
   - [x] 集成 ChatMemoryManager
   - [x] 支持对话历史上下文
+  - [x] **按需启用历史对话**（前端控制 conversationId）
+
+- [x] **性能优化**
+  - [x] 移除 MemoryAdvisor 自动注册（避免所有请求都查询数据库）
+  - [x] 只有前端传递 conversationId 时才启用历史功能
+  - [x] 流式响应优化（60-220ms 启动延迟优化）
 
 **包结构**：
 ```
 llm-agent/src/main/java/com/llmmanager/agent/
 ├── message/          ✅ Message, MessageType, MessageConverter
 ├── model/            ✅ ChatModel, ChatOptions, ChatResponse, OpenAiChatModelAdapter
-├── advisor/          ✅ ChatMemoryStore, ChatMemoryManager
+├── advisor/          ✅ ChatMemoryStore, ChatMemoryManager, AdvisorManager
 ├── storage/          ✅ ChatHistory, ChatHistoryMapper, ChatMemoryStoreImpl
-└── agent/            ✅ LlmChatAgent (重构)
+├── agent/            ✅ LlmChatAgent (重构)
+├── config/           ✅ ChatMemoryConfig (历史功能配置)
+└── dto/              ✅ ChatRequest (请求DTO)
 ```
 
 ---

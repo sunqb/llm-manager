@@ -1,20 +1,18 @@
 package com.llmmanager.ops.controller;
 
 import com.llmmanager.service.core.entity.Channel;
-import com.llmmanager.service.core.ChannelService;
+import com.llmmanager.service.core.service.ChannelService;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/channels")
 public class ChannelController {
 
-    private final ChannelService channelService;
-
-    public ChannelController(ChannelService channelService) {
-        this.channelService = channelService;
-    }
+    @Resource
+    private ChannelService channelService;
 
     @GetMapping
     public List<Channel> getAll() {
@@ -37,13 +35,14 @@ public class ChannelController {
 
     @PutMapping("/{id}")
     public Channel update(@PathVariable Long id, @RequestBody Channel updated) {
+        // 验证ID存在
         Channel existing = get(id);
-        existing.setName(updated.getName());
-        existing.setApiKey(updated.getApiKey());
-        existing.setBaseUrl(updated.getBaseUrl());
-        existing.setType(updated.getType());
-        existing.setAdditionalConfig(updated.getAdditionalConfig());
-        return channelService.update(existing);
+
+        // 设置ID后直接更新，MyBatis-Plus 会自动忽略 null 字段
+        updated.setId(id);
+        channelService.update(updated);
+
+        return channelService.findById(id);
     }
 
     @DeleteMapping("/{id}")

@@ -65,19 +65,22 @@ export default {
   },
 
   // Chat - 流式
-  chatStream(modelId, message, onChunk, onComplete, onError) {
+  chatStream(modelId, message, conversationId, onChunk, onComplete, onError) {
     const token = localStorage.getItem('satoken')
-    const url = `http://localhost:8080/api/chat/${modelId}/stream`
+    // 如果有 conversationId，添加到 URL 查询参数
+    const url = conversationId
+      ? `http://localhost:8080/api/chat/${modelId}/stream-flux?conversationId=${conversationId}`
+      : `http://localhost:8080/api/chat/${modelId}/stream-flux`
 
     return streamFetch(
       url,
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'text/plain',
           'satoken': token || ''
         },
-        body: JSON.stringify(message)
+        body: message
       },
       onChunk,
       onComplete,

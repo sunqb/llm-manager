@@ -1,7 +1,7 @@
 package com.llmmanager.openapi.config;
 
 import com.llmmanager.service.core.entity.ApiKey;
-import com.llmmanager.service.core.ApiKeyService;
+import com.llmmanager.service.core.service.ApiKeyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,16 +9,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import javax.annotation.Resource;
 import java.io.IOException;
 
 @Component
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
-    private final ApiKeyService apiKeyService;
-
-    public ApiKeyAuthFilter(ApiKeyService apiKeyService) {
-        this.apiKeyService = apiKeyService;
-    }
+    @Resource
+    private ApiKeyService apiKeyService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)

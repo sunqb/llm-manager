@@ -1,14 +1,19 @@
-package com.llmmanager.service.core;
+package com.llmmanager.service.core.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.llmmanager.service.core.service.UserService;
 import com.llmmanager.service.core.entity.User;
 import com.llmmanager.service.core.mapper.UserMapper;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+/**
+ * User Service 实现
+ */
 @Service
-public class UserService extends ServiceImpl<UserMapper, User> {
+public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     @PostConstruct
     public void init() {
@@ -22,9 +27,13 @@ public class UserService extends ServiceImpl<UserMapper, User> {
         }
     }
 
+    @Override
     public User findByUsername(String username) {
-        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("username", username);
+        if (!StringUtils.hasText(username)) {
+            return null;
+        }
+        LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(User::getUsername, username);
         return getOne(queryWrapper);
     }
 }

@@ -1,20 +1,18 @@
 package com.llmmanager.ops.controller;
 
 import com.llmmanager.service.core.entity.Agent;
-import com.llmmanager.service.core.AgentService;
+import com.llmmanager.service.core.service.AgentService;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/agents")
 public class AgentController {
 
-    private final AgentService agentService;
-
-    public AgentController(AgentService agentService) {
-        this.agentService = agentService;
-    }
+    @Resource
+    private AgentService agentService;
 
     @GetMapping
     public List<Agent> getAll() {
@@ -23,6 +21,16 @@ public class AgentController {
 
     @PostMapping
     public Agent create(@RequestBody Agent agent) {
+        // 验证必填字段
+        if (agent.getName() == null || agent.getName().trim().isEmpty()) {
+            throw new IllegalArgumentException("Agent 名称不能为空");
+        }
+        if (agent.getSlug() == null || agent.getSlug().trim().isEmpty()) {
+            throw new IllegalArgumentException("Agent slug 不能为空");
+        }
+        if (agent.getLlmModelId() == null) {
+            throw new IllegalArgumentException("Agent 必须关联一个模型（llmModelId 不能为空）");
+        }
         return agentService.create(agent);
     }
 
@@ -37,13 +45,14 @@ public class AgentController {
 
     @PutMapping("/{id}")
     public Agent update(@PathVariable Long id, @RequestBody Agent updated) {
+        // 验证ID存在
         Agent existing = get(id);
-        existing.setName(updated.getName());
-        existing.setSlug(updated.getSlug());
-        existing.setSystemPrompt(updated.getSystemPrompt());
-        existing.setLlmModelId(updated.getLlmModelId());
-        existing.setTemperatureOverride(updated.getTemperatureOverride());
-        return agentService.update(existing);
+
+        // 设置ID后直接更新，MyBatis-Plus 会自动忽略 null 字段
+        updated.setId(id);
+        agentService.update(updated);
+
+        return agentService.findById(id);
     }
 
     @DeleteMapping("/{id}")

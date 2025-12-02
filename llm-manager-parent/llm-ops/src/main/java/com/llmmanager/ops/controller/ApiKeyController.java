@@ -1,20 +1,18 @@
 package com.llmmanager.ops.controller;
 
 import com.llmmanager.service.core.entity.ApiKey;
-import com.llmmanager.service.core.ApiKeyService;
+import com.llmmanager.service.core.service.ApiKeyService;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/tokens")
 public class ApiKeyController {
 
-    private final ApiKeyService apiKeyService;
-
-    public ApiKeyController(ApiKeyService apiKeyService) {
-        this.apiKeyService = apiKeyService;
-    }
+    @Resource
+    private ApiKeyService apiKeyService;
 
     @GetMapping
     public List<ApiKey> getAll() {

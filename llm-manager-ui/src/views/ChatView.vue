@@ -36,6 +36,24 @@ const userInput = ref('')
 const loading = ref(false)
 const debugToken = ref('') // For testing agent auth
 const chatContainer = ref(null) // Ref for auto-scrolling
+const conversationId = ref(null) // 会话ID，前端控制
+
+// 生成不含"-"的 UUID
+const generateConversationId = () => {
+    return crypto.randomUUID().replace(/-/g, '')
+}
+
+// 开始新对话
+const startNewConversation = () => {
+    conversationId.value = generateConversationId()
+    messages.value = []
+
+    // 保存到 localStorage
+    localStorage.setItem('conversationId', conversationId.value)
+    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
+
+    console.log('[新对话] conversationId:', conversationId.value)
+}
 
 const load = async () => {
     const [mRes, aRes] = await Promise.all([api.getModels(), api.getAgents()])
@@ -43,6 +61,19 @@ const load = async () => {
     agents.value = aRes.data
     if (models.value.length) selectedModelId.value = models.value[0].id
     if (agents.value.length) selectedAgentSlug.value = agents.value[0].slug
+
+    // 尝试从 localStorage 恢复会话
+    const savedConversationId = localStorage.getItem('conversationId')
+    const savedMessages = localStorage.getItem('chatMessages')
+
+    if (savedConversationId && savedMessages) {
+        conversationId.value = savedConversationId
+        messages.value = JSON.parse(savedMessages)
+        console.log('[恢复会话] conversationId:', conversationId.value, '消息数:', messages.value.length)
+    } else {
+        // 初始化新对话
+        startNewConversation()
+    }
 }
 
 const scrollToBottom = () => {
@@ -110,16 +141,18 @@ const send = async () => {
                 }
             )
         } else {
-            // 使用流式API
+            // 使用流式API（带 conversationId）
             await api.chatStream(
                 selectedModelId.value,
                 text,
+                conversationId.value, // 传递会话ID
                 (chunk) => {
                     // 实时追加内容
                     messages.value[assistantMsgIndex].content += chunk
                 },
                 () => {
-                    // 完成
+                    // 完成后保存到 localStorage
+                    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
                     loading.value = false
                 },
                 (error) => {
@@ -178,9 +211,14 @@ onMounted(load)
             </div>
         </div>
         
-        <button @click="messages = []" class="text-slate-400 hover:text-red-500 text-sm flex items-center gap-1 transition-colors" title="清空对话">
-            <span class="text-lg">🗑</span> 清空
-        </button>
+        <div class="flex items-center gap-2">
+            <button @click="startNewConversation" class="text-slate-400 hover:text-green-600 text-sm flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg hover:bg-green-50" title="开始新对话">
+                <span class="text-lg">✨</span> 新对话
+            </button>
+            <button @click="messages = []; localStorage.setItem('chatMessages', '[]')" class="text-slate-400 hover:text-red-500 text-sm flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50" title="清空对话">
+                <span class="text-lg">🗑</span> 清空
+            </button>
+        </div>
     </div>
 
     <!-- Chat Area -->

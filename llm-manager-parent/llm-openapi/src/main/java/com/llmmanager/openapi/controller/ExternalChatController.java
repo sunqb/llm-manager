@@ -1,12 +1,13 @@
 package com.llmmanager.openapi.controller;
 
 import com.llmmanager.service.core.entity.Agent;
-import com.llmmanager.service.core.AgentService;
+import com.llmmanager.service.core.service.AgentService;
 import com.llmmanager.service.orchestration.LlmExecutionService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import javax.annotation.Resource;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -18,14 +19,13 @@ import java.util.concurrent.Executors;
 @RequestMapping("/api/external")
 public class ExternalChatController {
 
-    private final AgentService agentService;
-    private final LlmExecutionService executionService;
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
+    @Resource
+    private AgentService agentService;
 
-    public ExternalChatController(AgentService agentService, LlmExecutionService executionService) {
-        this.agentService = agentService;
-        this.executionService = executionService;
-    }
+    @Resource
+    private LlmExecutionService executionService;
+
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @PostMapping("/agents/{slug}/chat")
     public Map<String, String> chatWithAgent(@PathVariable String slug, @RequestBody Map<String, String> payload) {

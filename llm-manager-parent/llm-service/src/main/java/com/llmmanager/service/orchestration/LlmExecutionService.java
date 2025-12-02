@@ -2,17 +2,19 @@ package com.llmmanager.service.orchestration;
 
 import com.llmmanager.agent.agent.LlmChatAgent;
 import com.llmmanager.agent.dto.ChatRequest;
-import com.llmmanager.service.core.ChannelService;
-import com.llmmanager.service.core.LlmModelService;
+import com.llmmanager.service.core.service.ChannelService;
+import com.llmmanager.service.core.service.LlmModelService;
 import com.llmmanager.service.core.entity.Agent;
 import com.llmmanager.service.core.entity.Channel;
 import com.llmmanager.service.core.entity.LlmModel;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
+import javax.annotation.Resource;
 import java.util.Map;
 
 /**
@@ -22,23 +24,20 @@ import java.util.Map;
 @Service
 public class LlmExecutionService {
 
-    private final LlmModelService llmModelService;
-    private final ChannelService channelService;
-    private final LlmChatAgent llmChatAgent;
+    @Resource
+    private LlmModelService llmModelService;
+
+    @Resource
+    private ChannelService channelService;
+
+    @Resource
+    private LlmChatAgent llmChatAgent;
 
     @Value("${spring.ai.openai.api-key:}")
     private String defaultApiKey;
 
     @Value("${spring.ai.openai.base-url:https://api.openai.com}")
     private String defaultBaseUrl;
-
-    public LlmExecutionService(LlmModelService llmModelService,
-                              ChannelService channelService,
-                              LlmChatAgent llmChatAgent) {
-        this.llmModelService = llmModelService;
-        this.channelService = channelService;
-        this.llmChatAgent = llmChatAgent;
-    }
 
     /**
      * 普通对话
@@ -76,21 +75,37 @@ public class LlmExecutionService {
     }
 
     /**
-     * 流式对话
+     * 流式对话（指定 conversationId）
+     *
+     * @param conversationId 会话ID（前端传递，null 表示不启用历史）
      */
-    public Flux<String> streamChat(Long modelId, String userMessage) {
+    public Flux<String> streamChat(Long modelId, String userMessage, String conversationId) {
         LlmModel model = llmModelService.getById(modelId);
         if (model == null) {
             throw new RuntimeException("Model not found");
         }
 
-        return executeStreamRequest(model, userMessage, null, model.getTemperature());
+        // 只有前端传入了 conversationId 才启用历史对话
+        if (conversationId != null && !conversationId.trim().isEmpty()) {
+            System.out.println("[StreamChat] 请求模型: " + model.getModelIdentifier() + ", 会话ID: " + conversationId);
+            return executeStreamRequest(model, userMessage, null, model.getTemperature(), conversationId);
+        } else {
+            System.out.println("[StreamChat] 请求模型: " + model.getModelIdentifier() + ", 无会话历史");
+            return executeStreamRequest(model, userMessage, null, model.getTemperature(), null);
+        }
     }
 
     /**
-     * 使用Agent进行流式对话
+     * 流式对话（不启用历史）
      */
-    public Flux<String> streamChatWithAgent(Agent agent, String userMessage) {
+    public Flux<String> streamChat(Long modelId, String userMessage) {
+        return streamChat(modelId, userMessage, null);
+    }
+
+    /**
+     * 使用Agent进行流式对话（指定 conversationId）
+     */
+    public Flux<String> streamChatWithAgent(Agent agent, String userMessage, String conversationId) {
         LlmModel model = llmModelService.getById(agent.getLlmModelId());
         if (model == null) {
             throw new RuntimeException("Model not found for agent");
@@ -98,7 +113,69 @@ public class LlmExecutionService {
         Double temp = agent.getTemperatureOverride() != null ?
                       agent.getTemperatureOverride() : model.getTemperature();
 
-        return executeStreamRequest(model, userMessage, agent.getSystemPrompt(), temp);
+        // 只有前端传入了 conversationId 才启用历史对话
+        if (conversationId != null && !conversationId.trim().isEmpty()) {
+            return executeStreamRequest(model, userMessage, agent.getSystemPrompt(), temp, conversationId);
+        } else {
+            return executeStreamRequest(model, userMessage, agent.getSystemPrompt(), temp, null);
+        }
+    }
+
+    /**
+     * 使用Agent进行流式对话（不启用历史）
+     */
+    public Flux<String> streamChatWithAgent(Agent agent, String userMessage) {
+        return streamChatWithAgent(agent, userMessage, null);
+    }
+
+    /**
+     * 流式对话（返回完整响应，支持 reasoning）
+     */
+    public Flux<ChatResponse> streamChatResponse(Long modelId, String userMessage, String conversationId) {
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
+
+        // 只有前端传入了 conversationId 才启用历史对话
+        if (conversationId != null && !conversationId.trim().isEmpty()) {
+            return executeStreamResponseRequest(model, userMessage, null, model.getTemperature(), conversationId);
+        } else {
+            return executeStreamResponseRequest(model, userMessage, null, model.getTemperature(), null);
+        }
+    }
+
+    /**
+     * 流式对话（返回完整响应，不启用历史）
+     */
+    public Flux<ChatResponse> streamChatResponse(Long modelId, String userMessage) {
+        return streamChatResponse(modelId, userMessage, null);
+    }
+
+    /**
+     * 使用Agent进行流式对话（返回完整响应，支持 reasoning）
+     */
+    public Flux<ChatResponse> streamChatResponseWithAgent(Agent agent, String userMessage, String conversationId) {
+        LlmModel model = llmModelService.getById(agent.getLlmModelId());
+        if (model == null) {
+            throw new RuntimeException("Model not found for agent");
+        }
+        Double temp = agent.getTemperatureOverride() != null ?
+                      agent.getTemperatureOverride() : model.getTemperature();
+
+        // 只有前端传入了 conversationId 才启用历史对话
+        if (conversationId != null && !conversationId.trim().isEmpty()) {
+            return executeStreamResponseRequest(model, userMessage, agent.getSystemPrompt(), temp, conversationId);
+        } else {
+            return executeStreamResponseRequest(model, userMessage, agent.getSystemPrompt(), temp, null);
+        }
+    }
+
+    /**
+     * 使用Agent进行流式对话（返回完整响应，不启用历史）
+     */
+    public Flux<ChatResponse> streamChatResponseWithAgent(Agent agent, String userMessage) {
+        return streamChatResponseWithAgent(agent, userMessage, null);
     }
 
     /**
@@ -113,19 +190,38 @@ public class LlmExecutionService {
     /**
      * 执行流式请求 - 通过llm-agent
      */
-    private Flux<String> executeStreamRequest(LlmModel model, String userMessage, String systemPrompt, Double temperature) {
+    private Flux<String> executeStreamRequest(LlmModel model, String userMessage, String systemPrompt, Double temperature, String conversationId) {
         Channel channel = getChannel(model);
         ChatRequest request = buildChatRequest(channel, model, userMessage, systemPrompt, temperature);
-        return llmChatAgent.streamChat(request);
+        return llmChatAgent.streamChat(request, conversationId);
+    }
+
+    /**
+     * 执行流式请求（返回完整响应）- 通过llm-agent
+     */
+    private Flux<ChatResponse> executeStreamResponseRequest(LlmModel model, String userMessage, String systemPrompt, Double temperature, String conversationId) {
+        Channel channel = getChannel(model);
+        ChatRequest request = buildChatRequest(channel, model, userMessage, systemPrompt, temperature);
+        return llmChatAgent.streamChatResponse(request, conversationId);
     }
 
     /**
      * 获取Channel配置
      */
     private Channel getChannel(LlmModel model) {
+        if (model.getChannelId() == null) {
+            throw new RuntimeException(String.format(
+                "模型 [ID=%d, Name=%s] 未关联任何渠道，请先在管理后台为该模型配置渠道",
+                model.getId(), model.getName()
+            ));
+        }
+
         Channel channel = channelService.getById(model.getChannelId());
         if (channel == null) {
-            throw new RuntimeException("Model has no associated channel");
+            throw new RuntimeException(String.format(
+                "模型 [ID=%d, Name=%s] 关联的渠道 [ID=%d] 不存在，请检查渠道配置",
+                model.getId(), model.getName(), model.getChannelId()
+            ));
         }
         return channel;
     }

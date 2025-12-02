@@ -239,8 +239,20 @@ spring:
 
 ### 内部管理 API (需登录)
 ```bash
-# 流式对话
+# 普通流式对话（SseEmitter 实现）
 curl -X POST http://localhost:8080/api/chat/{modelId}/stream \
+  -H "Cookie: satoken={token}" \
+  -H "Content-Type: text/plain" \
+  -d "你好"
+
+# WebFlux 流式对话（推荐，性能更好）
+curl -X POST http://localhost:8080/api/chat/{modelId}/stream-flux \
+  -H "Cookie: satoken={token}" \
+  -H "Content-Type: text/plain" \
+  -d "你好"
+
+# 支持 reasoning 的流式对话（用于 OpenAI o1 等思考模型）
+curl -X POST http://localhost:8080/api/chat/{modelId}/stream-with-reasoning \
   -H "Cookie: satoken={token}" \
   -H "Content-Type: text/plain" \
   -d "你好"
@@ -261,6 +273,35 @@ curl -N http://localhost:8080/api/external/agents/{slug}/chat/stream \
   -d '{"message": "你好"}'
 ```
 
+### 流式响应格式说明
+
+**普通流式响应**（/stream, /stream-flux）:
+```json
+{"choices":[{"delta":{"content":"文本内容"}}]}
+{"choices":[{"delta":{"content":"更多内容"}}]}
+[DONE]
+```
+
+**支持 reasoning 的流式响应**（/stream-with-reasoning）:
+
+对于支持思考的模型（如 OpenAI o1），会返回包含 `reasoning_content` 的响应：
+
+```json
+// 包含思考内容
+{"choices":[{"delta":{"reasoning_content":"正在思考解决方案..."}}]}
+{"choices":[{"delta":{"reasoning_content":"分析中...","content":"答案"}}]}
+
+// 仅包含回答内容（普通模型）
+{"choices":[{"delta":{"content":"回答内容"}}]}
+
+[DONE]
+```
+
+**说明**：
+- `reasoning_content`: 模型的思考过程（仅支持思考的模型会返回）
+- `content`: 最终的回答内容
+- 前端可以分别显示思考过程和回答，提供更好的用户体验
+
 ## Spring AI Integration Notes
 
 - **版本**: 1.1.0-M4 (需要 Spring Milestones 仓库)
@@ -268,6 +309,316 @@ curl -N http://localhost:8080/api/external/agents/{slug}/chat/stream \
 - **封装位置**: `llm-agent` 模块
 - **配置方式**: 代码动态创建 (非自动配置)
 - **支持特性**: 同步对话、流式对话、温度控制、系统提示词
+
+---
+
+## 聊天历史记忆（基于 Spring AI）
+
+### 概述
+
+LLM-Agent 模块统一使用 **Spring AI** 实现历史对话管理：
+- 底层使用 Spring AI 的 `ChatClient` 和 `MessageChatMemoryAdvisor`
+- 提供封装的简单 API 和原生 API 两种使用方式
+- 历史记录持久化到 MySQL 数据库（`chat_history` 表）
+
+### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── storage/                           # 存储相关
+│   ├── core/                          # 核心数据层（直接映射数据库）
+│   │   ├── entity/
+│   │   │   └── ChatHistory.java      # 数据库实体
+│   │   └── mapper/
+│   │       └── ChatHistoryMapper.java # MyBatis Mapper
+│   └── memory/                        # LLM 聊天记忆业务层
+│       ├── MybatisChatMemoryRepository.java  # Spring AI 适配器
+│       └── ChatMemoryManager.java            # 聊天记忆管理器
+├── advisor/                           # Advisor 实现（预留，未来扩展）
+├── agent/
+│   └── LlmChatAgent.java             # LLM 对话代理
+├── config/
+│   ├── ChatMemoryConfig.java         # 聊天记忆配置
+│   └── ChatMemoryProperties.java     # 配置属性
+└── dto/
+    └── ChatRequest.java              # 请求 DTO
+```
+
+**职责划分**：
+- `storage/core/`: 核心数据层，直接映射数据库（Entity + Mapper）
+- `storage/memory/`: LLM 业务层，实现聊天记忆功能（Spring AI 适配 + 管理器）
+- `advisor/`: 预留给未来的自定义 Advisor 实现（如 OpsChatMemoryAdvisor）
+
+---
+
+### 配置方式
+
+#### application.yml 配置
+
+```yaml
+llm:
+  memory:
+    enabled: true          # 是否启用历史记忆（默认 true）
+    max-messages: 10        # 最大保留消息数
+    enable-cleanup: false   # 是否启用历史清理
+    retention-days: 7       # 保留天数
+```
+
+---
+
+### 使用示例
+
+#### 示例 1：基础对话（封装 API）
+
+```java
+@Resource
+private LlmChatAgent llmChatAgent;
+
+// 无历史对话
+String response = llmChatAgent.chat(request);
+
+// 带历史对话
+String response = llmChatAgent.chat(request, "conversation-123");
+```
+
+#### 示例 2：使用 ChatRequest 参数透传
+
+```java
+ChatRequest request = ChatRequest.builder()
+    .apiKey(channelConfig.getApiKey())
+    .baseUrl(channelConfig.getBaseUrl())
+    .modelIdentifier("gpt-4")
+    .temperature(0.7)
+    .systemPrompt("你是一个有帮助的助手")
+    .userMessage("你好")
+    // 历史记忆相关参数
+    .conversationId("conversation-123")
+    .enableMemory(true)
+    // 高级参数
+    .topP(0.9)
+    .maxTokens(2000)
+    .frequencyPenalty(0.5)
+    .presencePenalty(0.3)
+    .build();
+
+String response = llmChatAgent.chat(request);
+```
+
+#### 示例 3：流式对话
+
+```java
+Flux<String> stream = llmChatAgent.streamChat(request, "conversation-123");
+
+stream.subscribe(
+    chunk -> System.out.print(chunk),
+    error -> System.err.println("错误: " + error.getMessage()),
+    () -> System.out.println("\n[对话完成]")
+);
+```
+
+#### 示例 4：清除会话历史
+
+```java
+llmChatAgent.clearConversationHistory("conversation-123");
+```
+
+#### 示例 5：使用 Spring AI 原生 API（高级用法）
+
+**场景：需要组合 RAG、Tool Calling 等高级功能**
+
+```java
+@Resource
+private LlmChatAgent llmChatAgent;
+
+// 方式1：获取预配置的 ChatClient（带 Memory Advisor）
+@Resource
+private ChatModel springAiChatModel;  // 注入 Spring AI ChatModel
+
+ChatClient chatClient = llmChatAgent.createChatClient(springAiChatModel);
+
+String response = chatClient.prompt()
+    .user("你好，我是张三")
+    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, "conv-123"))
+    .call()
+    .content();
+
+// 方式2：纯净的 ChatClient（无预配置）
+ChatClient pureClient = llmChatAgent.createPureChatClient(springAiChatModel);
+
+String response = pureClient.prompt()
+    .system("你是翻译助手")
+    .user("Translate: Hello World")
+    .call()
+    .content();
+
+// 方式3：组合多个 Advisor（Memory + RAG + Tool）
+@Resource
+private VectorStore vectorStore;
+
+QuestionAnswerAdvisor ragAdvisor = new QuestionAnswerAdvisor(vectorStore);
+MessageChatMemoryAdvisor memoryAdvisor = llmChatAgent.getMemoryAdvisor();
+
+ChatClient advancedClient = llmChatAgent.createChatClientWithAdvisors(
+    springAiChatModel,
+    memoryAdvisor,
+    ragAdvisor
+);
+
+String response = advancedClient.prompt()
+    .user("根据知识库解释分布式锁")
+    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, "conv-123"))
+    .call()
+    .content();
+```
+
+---
+
+### 参数优先级
+
+当同时传入多个 `conversationId` 时，优先级如下：
+
+```
+方法参数 > ChatRequest.conversationId
+```
+
+示例：
+```java
+ChatRequest request = ChatRequest.builder()
+    .conversationId("request-id")
+    .build();
+
+// 实际使用 "param-id"
+llmChatAgent.chat(request, "param-id");
+```
+
+---
+
+### 核心实现类
+
+**1. MybatisChatMemoryRepository**
+
+MyBatis 实现的 ChatMemoryRepository，将 Spring AI 接口适配到 MySQL 存储：
+
+```java
+@Repository  // 位于 storage/memory/
+public class MybatisChatMemoryRepository implements ChatMemoryRepository {
+    private final ChatHistoryMapper chatHistoryMapper;
+
+    // 实现 Spring AI 接口
+    void saveAll(String conversationId, List<Message> messages);
+    List<Message> findByConversationId(String conversationId);
+    void deleteByConversationId(String conversationId);
+    List<String> findConversationIds();
+}
+```
+
+**数据流向**：Spring AI ChatMemory → MybatisChatMemoryRepository → ChatHistoryMapper → MySQL
+
+**2. ChatMemoryManager**
+
+聊天记忆管理器，封装 Spring AI 组件：
+
+```java
+@Component  // 位于 storage/memory/
+public class ChatMemoryManager {
+    private final ChatMemory chatMemory;
+    private final MessageChatMemoryAdvisor memoryAdvisor;
+
+    public MessageChatMemoryAdvisor getMemoryAdvisor() { ... }
+    public ChatMemory getChatMemory() { ... }
+    public void clearHistory(String conversationId) { ... }
+}
+```
+
+**3. ChatHistory**
+
+数据库实体，映射 `chat_history` 表：
+
+```java
+@TableName("chat_history")  // 位于 storage/core/entity/
+public class ChatHistory {
+    private Long id;
+    private String conversationId;
+    private String messageType;  // SYSTEM/USER/ASSISTANT/TOOL
+    private String content;
+    private Map<String, Object> metadata;
+}
+```
+
+**4. ChatHistoryMapper**
+
+MyBatis-Plus Mapper：
+
+```java
+@Mapper  // 位于 storage/core/mapper/
+public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
+    List<ChatHistory> selectRecentMessages(@Param("conversationId") String conversationId,
+                                            @Param("limit") int limit);
+}
+```
+
+**5. LlmChatAgent**
+
+统一使用 Spring AI 的执行代理：
+
+```java
+@Component  // 位于 agent/
+public class LlmChatAgent {
+    // 封装的简单 API
+    public String chat(ChatRequest request, String conversationId);
+    public Flux<String> streamChat(ChatRequest request, String conversationId);
+
+    // Spring AI 原生 API
+    public ChatClient createChatClient(ChatModel chatModel);
+    public ChatClient createPureChatClient(ChatModel chatModel);
+    public ChatClient createChatClientWithAdvisors(ChatModel chatModel, Advisor... advisors);
+    public MessageChatMemoryAdvisor getMemoryAdvisor();
+    public ChatMemory getChatMemory();
+}
+```
+
+**6. ChatRequest**
+
+请求参数封装，支持历史记忆和高级参数：
+
+- `conversationId`: 会话ID
+- `enableMemory`: 是否启用历史记忆
+- `topP`, `maxTokens`, `frequencyPenalty`, `presencePenalty`: 模型参数
+
+---
+
+### 数据库表结构
+
+```sql
+CREATE TABLE chat_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id VARCHAR(255) NOT NULL,
+    message_type VARCHAR(20) NOT NULL,  -- SYSTEM/USER/ASSISTANT/TOOL
+    content TEXT NOT NULL,
+    metadata JSON,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_conversation_id (conversation_id),
+    INDEX idx_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+### 注意事项
+
+1. **灵活性**：
+   - 提供封装的简单 API：`chat()`, `streamChat()`
+   - 暴露 Spring AI 原生 API：支持高度自定义（RAG、Tool Calling 等）
+
+2. **数据安全**：
+   - 所有历史记录使用软删除（`is_delete` 字段）
+   - 可配置定期清理过期数据（`llm.memory.enable-cleanup`）
+
+3. **性能**：
+   - ChatModel 实例自动缓存（基于 `channelId_apiKey_baseUrl`）
+   - 调用 `clearCacheForChannel()` 清除指定渠道缓存
 
 ---
 

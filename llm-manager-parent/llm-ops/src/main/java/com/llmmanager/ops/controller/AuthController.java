@@ -3,20 +3,18 @@ package com.llmmanager.ops.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.util.SaResult;
 import com.llmmanager.service.core.entity.User;
-import com.llmmanager.service.core.UserService;
+import com.llmmanager.service.core.service.UserService;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final UserService userService;
-
-    public AuthController(UserService userService) {
-        this.userService = userService;
-    }
+    @Resource
+    private UserService userService;
 
     @PostMapping("/login")
     public SaResult login(@RequestBody Map<String, String> params) {

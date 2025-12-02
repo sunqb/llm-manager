@@ -1,4 +1,4 @@
-package com.llmmanager.agent.storage.entity;
+package com.llmmanager.agent.storage.core.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

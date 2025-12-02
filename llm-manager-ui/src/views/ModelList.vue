@@ -24,10 +24,13 @@ const load = async () => {
 }
 
 const submit = async () => {
-  const payload = { ...form.value }
-  // Ensure channel is an object with ID
-  if (typeof payload.channel === 'number' || typeof payload.channel === 'string') {
-      payload.channel = { id: payload.channel }
+  const payload = {
+    name: form.value.name,
+    modelIdentifier: form.value.modelIdentifier,
+    channelId: form.value.channel?.id || form.value.channel,  // 转换为 channelId
+    temperature: form.value.temperature,
+    description: form.value.description,
+    maxTokens: form.value.maxTokens
   }
 
   if (editingId.value) {
@@ -40,20 +43,28 @@ const submit = async () => {
 }
 
 const edit = (model) => {
-  form.value = JSON.parse(JSON.stringify(model)) // Deep copy
-  // Ensure channel structure for select
-  if (!form.value.channel) form.value.channel = { id: null }
-  
+  // 深拷贝并转换字段名
+  form.value = {
+    name: model.name,
+    modelIdentifier: model.modelIdentifier,
+    channel: { id: model.channelId },  // 从 channelId 转换为 channel.id
+    temperature: model.temperature,
+    description: model.description,
+    maxTokens: model.maxTokens
+  }
+
   editingId.value = model.id
   showForm.value = true
 }
 
 const resetForm = () => {
-  form.value = { 
-    name: '', 
-    modelIdentifier: '', 
-    channel: { id: channels.value[0]?.id || null }, 
-    temperature: 0.7 
+  form.value = {
+    name: '',
+    modelIdentifier: '',
+    channel: { id: channels.value[0]?.id || null },
+    temperature: 0.7,
+    description: '',
+    maxTokens: null
   }
   editingId.value = null
   showForm.value = false
@@ -107,8 +118,16 @@ onMounted(load)
               </div>
             </div>
             <div class="space-y-1">
-              <label class="text-sm font-medium text-slate-700">默认温度 (0.0 - 1.0)</label>
+              <label class="text-sm font-medium text-slate-700">默认温度 (0.0 - 2.0)</label>
               <input v-model.number="form.temperature" type="number" step="0.1" min="0" max="2" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all" />
+            </div>
+            <div class="space-y-1">
+              <label class="text-sm font-medium text-slate-700">最大 Tokens (可选)</label>
+              <input v-model.number="form.maxTokens" type="number" min="1" placeholder="例如: 4096" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all" />
+            </div>
+            <div class="space-y-1 md:col-span-2">
+              <label class="text-sm font-medium text-slate-700">模型描述 (可选)</label>
+              <textarea v-model="form.description" placeholder="例如: 用于生产环境的高性能模型" rows="2" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all resize-none"></textarea>
             </div>
           </div>
           <div class="flex justify-end pt-2">

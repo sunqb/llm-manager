@@ -1,7 +1,7 @@
-package com.llmmanager.agent.storage.mapper;
+package com.llmmanager.agent.storage.core.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.llmmanager.agent.storage.entity.ChatHistory;
+import com.llmmanager.agent.storage.core.entity.ChatHistory;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

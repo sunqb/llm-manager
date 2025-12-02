@@ -23,37 +23,50 @@ const load = async () => {
 }
 
 const submit = async () => {
-  const payload = { ...form.value }
-  if (typeof payload.llmModel === 'number' || typeof payload.llmModel === 'string') {
-      payload.llmModel = { id: payload.llmModel }
+  const payload = {
+    name: form.value.name,
+    slug: form.value.slug,
+    description: form.value.description,
+    systemPrompt: form.value.systemPrompt,
+    llmModelId: form.value.llmModel?.id || form.value.llmModel,  // 转换为 llmModelId
+    temperatureOverride: form.value.temperatureOverride
   }
 
   if (editingId.value) {
-      await api.updateAgent(editingId.value, payload)
+    await api.updateAgent(editingId.value, payload)
   } else {
-      await api.createAgent(payload)
+    await api.createAgent(payload)
   }
   resetForm()
   await load()
 }
 
 const edit = (agent) => {
-    form.value = JSON.parse(JSON.stringify(agent))
-    if (!form.value.llmModel) form.value.llmModel = { id: null }
-    editingId.value = agent.id
-    showForm.value = true
+  // 深拷贝并转换字段名
+  form.value = {
+    name: agent.name,
+    slug: agent.slug,
+    description: agent.description,
+    systemPrompt: agent.systemPrompt,
+    llmModel: { id: agent.llmModelId },  // 从 llmModelId 转换为 llmModel.id
+    temperatureOverride: agent.temperatureOverride
+  }
+
+  editingId.value = agent.id
+  showForm.value = true
 }
 
 const resetForm = () => {
-    form.value = { 
-        name: '', 
-        slug: '', 
-        systemPrompt: '', 
-        llmModel: { id: models.value[0]?.id || null }, 
-        temperatureOverride: null 
-    }
-    editingId.value = null
-    showForm.value = false
+  form.value = {
+    name: '',
+    slug: '',
+    description: '',
+    systemPrompt: '',
+    llmModel: { id: models.value[0]?.id || null },
+    temperatureOverride: null
+  }
+  editingId.value = null
+  showForm.value = false
 }
 
 const remove = async (id) => {
@@ -107,6 +120,10 @@ onMounted(load)
               <label class="text-sm font-medium text-slate-700">温度覆盖 (可选)</label>
               <input v-model.number="form.temperatureOverride" type="number" step="0.1" placeholder="覆盖模型默认温度" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all" />
             </div>
+          </div>
+          <div class="space-y-1">
+            <label class="text-sm font-medium text-slate-700">智能体描述 (可选)</label>
+            <textarea v-model="form.description" placeholder="例如: 专门用于编写和优化代码的智能助手" rows="2" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all resize-none"></textarea>
           </div>
           <div class="space-y-1">
             <label class="text-sm font-medium text-slate-700">系统提示词 (System Prompt)</label>
