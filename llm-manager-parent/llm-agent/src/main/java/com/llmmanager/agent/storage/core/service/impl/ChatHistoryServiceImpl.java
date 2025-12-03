@@ -24,6 +24,10 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
 
     @Override
     public void save(ChatHistory chatHistory) {
+        // 确保 messageCode 不为空
+        if (chatHistory.getMessageCode() == null) {
+            chatHistory.setMessageCode(ChatHistory.generateMessageCode());
+        }
         chatHistoryMapper.insert(chatHistory);
     }
 
@@ -34,30 +38,42 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
             return;
         }
         for (ChatHistory history : histories) {
+            // 确保 messageCode 不为空
+            if (history.getMessageCode() == null) {
+                history.setMessageCode(ChatHistory.generateMessageCode());
+            }
             chatHistoryMapper.insert(history);
         }
     }
 
     @Override
-    public List<ChatHistory> findByConversationId(String conversationId) {
-        if (conversationId == null) {
+    public List<ChatHistory> findByConversationCode(String conversationCode) {
+        if (conversationCode == null) {
             return Collections.emptyList();
         }
 
         LambdaQueryWrapper<ChatHistory> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(ChatHistory::getConversationId, conversationId)
+        queryWrapper.eq(ChatHistory::getConversationCode, conversationCode)
                     .orderByAsc(ChatHistory::getCreateTime);
 
         return chatHistoryMapper.selectList(queryWrapper);
     }
 
     @Override
-    public List<ChatHistory> findRecentMessages(String conversationId, int limit) {
-        if (conversationId == null || limit <= 0) {
+    public List<ChatHistory> findByTurnCode(String turnCode) {
+        if (turnCode == null) {
+            return Collections.emptyList();
+        }
+        return chatHistoryMapper.selectByTurnCode(turnCode);
+    }
+
+    @Override
+    public List<ChatHistory> findRecentMessages(String conversationCode, int limit) {
+        if (conversationCode == null || limit <= 0) {
             return Collections.emptyList();
         }
 
-        List<ChatHistory> histories = chatHistoryMapper.selectRecentMessages(conversationId, limit);
+        List<ChatHistory> histories = chatHistoryMapper.selectRecentMessages(conversationCode, limit);
 
         // 反转列表（Mapper 返回倒序，这里转为正序）
         Collections.reverse(histories);
@@ -66,48 +82,53 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
     }
 
     @Override
-    public List<String> findAllConversationIds() {
+    public ChatHistory findByMessageCode(String messageCode) {
+        if (messageCode == null) {
+            return null;
+        }
+        return chatHistoryMapper.selectByMessageCode(messageCode);
+    }
+
+    @Override
+    public List<String> findAllConversationCodes() {
         return chatHistoryMapper.selectList(new LambdaQueryWrapper<ChatHistory>()
-                        .select(ChatHistory::getConversationId)
-                        .groupBy(ChatHistory::getConversationId))
+                        .select(ChatHistory::getConversationCode)
+                        .groupBy(ChatHistory::getConversationCode))
                 .stream()
-                .map(ChatHistory::getConversationId)
+                .map(ChatHistory::getConversationCode)
                 .distinct()
                 .toList();
     }
 
     @Override
-    public int countByConversationId(String conversationId) {
-        if (conversationId == null) {
+    public int countByConversationCode(String conversationCode) {
+        if (conversationCode == null) {
             return 0;
         }
 
         LambdaQueryWrapper<ChatHistory> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(ChatHistory::getConversationId, conversationId);
+        queryWrapper.eq(ChatHistory::getConversationCode, conversationCode);
 
         return Math.toIntExact(chatHistoryMapper.selectCount(queryWrapper));
     }
 
     @Override
-    public Integer getMaxMessageIndex(String conversationId) {
-        if (conversationId == null) {
+    public Integer getMaxMessageIndex(String conversationCode) {
+        if (conversationCode == null) {
             return null;
         }
-        return chatHistoryMapper.getMaxMessageIndex(conversationId);
+        return chatHistoryMapper.getMaxMessageIndex(conversationCode);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteByConversationId(String conversationId) {
-        if (conversationId == null) {
+    public void deleteByConversationCode(String conversationCode) {
+        if (conversationCode == null) {
             return;
         }
 
         // 软删除
-        LambdaUpdateWrapper<ChatHistory> updateWrapper = new LambdaUpdateWrapper<>();
-        updateWrapper.eq(ChatHistory::getConversationId, conversationId)
-                     .set(ChatHistory::getIsDelete, 1);
-        chatHistoryMapper.update(null, updateWrapper);
+        chatHistoryMapper.softDeleteByConversationCode(conversationCode);
     }
 
     @Override
@@ -120,7 +141,7 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
         // 计算过期时间（当前时间 - 保留天数）
         LocalDateTime expireTime = LocalDateTime.now().minusDays(retentionDays);
 
-        // 硬删除超过保留天数的记录
+        // 软删除超过保留天数的记录
         return chatHistoryMapper.deleteExpiredMessages(expireTime);
     }
 }

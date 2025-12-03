@@ -9,6 +9,11 @@ import java.util.List;
  *
  * 职责：封装 ChatHistory 的 CRUD 操作
  * 调用方：storage/memory 层的业务类
+ *
+ * 命名规范：
+ * - conversationCode：会话业务唯一标识
+ * - messageCode：消息业务唯一标识
+ * - turnCode：轮次业务唯一标识
  */
 public interface ChatHistoryService {
 
@@ -29,49 +34,65 @@ public interface ChatHistoryService {
     /**
      * 查询会话的所有历史消息（按时间升序）
      *
-     * @param conversationId 会话ID
+     * @param conversationCode 会话标识
      * @return 聊天历史列表
      */
-    List<ChatHistory> findByConversationId(String conversationId);
+    List<ChatHistory> findByConversationCode(String conversationCode);
+
+    /**
+     * 查询轮次的所有消息
+     *
+     * @param turnCode 轮次标识
+     * @return 聊天历史列表（按消息序号升序）
+     */
+    List<ChatHistory> findByTurnCode(String turnCode);
 
     /**
      * 查询会话的最近 N 条消息
      *
-     * @param conversationId 会话ID
+     * @param conversationCode 会话标识
      * @param limit 限制条数
      * @return 聊天历史列表（按时间升序）
      */
-    List<ChatHistory> findRecentMessages(String conversationId, int limit);
+    List<ChatHistory> findRecentMessages(String conversationCode, int limit);
 
     /**
-     * 查询所有会话ID
+     * 根据消息标识查询
      *
-     * @return 会话ID列表
+     * @param messageCode 消息标识
+     * @return 聊天历史
      */
-    List<String> findAllConversationIds();
+    ChatHistory findByMessageCode(String messageCode);
+
+    /**
+     * 查询所有会话标识
+     *
+     * @return 会话标识列表
+     */
+    List<String> findAllConversationCodes();
 
     /**
      * 统计指定会话的消息数量
      *
-     * @param conversationId 会话ID
+     * @param conversationCode 会话标识
      * @return 消息数量
      */
-    int countByConversationId(String conversationId);
+    int countByConversationCode(String conversationCode);
 
     /**
      * 获取指定会话的最大消息序号
      *
-     * @param conversationId 会话ID
+     * @param conversationCode 会话标识
      * @return 最大消息序号，如果没有记录则返回null
      */
-    Integer getMaxMessageIndex(String conversationId);
+    Integer getMaxMessageIndex(String conversationCode);
 
     /**
      * 软删除指定会话的所有历史
      *
-     * @param conversationId 会话ID
+     * @param conversationCode 会话标识
      */
-    void deleteByConversationId(String conversationId);
+    void deleteByConversationCode(String conversationCode);
 
     /**
      * 删除过期的历史消息（硬删除）

@@ -556,21 +556,69 @@ private ChatClient createChatClient(ChatRequest request, String conversationId) 
 ### 数据库表结构
 
 ```sql
+-- 会话表
+CREATE TABLE a_conversations (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_code VARCHAR(100) NOT NULL UNIQUE COMMENT '会话唯一标识（32位UUID）',
+    title VARCHAR(255) COMMENT '会话标题',
+    message_count INT DEFAULT 0 COMMENT '消息数量',
+    last_message_time DATETIME COMMENT '最后消息时间',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_conversation_code (conversation_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话表';
+
+-- 对话轮次表（一次问答的关联）
+CREATE TABLE a_conversation_turns (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    turn_code VARCHAR(32) NOT NULL UNIQUE COMMENT 'Turn唯一标识（32位UUID）',
+    conversation_code VARCHAR(100) NOT NULL COMMENT '会话标识',
+    turn_index INT NOT NULL DEFAULT 0 COMMENT '轮次序号（从0开始）',
+    user_message_code VARCHAR(32) COMMENT '用户消息标识',
+    assistant_message_code VARCHAR(32) COMMENT '助手消息标识',
+    prompt_tokens INT DEFAULT 0 COMMENT '输入token数',
+    completion_tokens INT DEFAULT 0 COMMENT '输出token数',
+    total_tokens INT DEFAULT 0 COMMENT '总token数',
+    latency_ms INT DEFAULT 0 COMMENT '响应耗时(毫秒)',
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '状态：PENDING/PROCESSING/SUCCESS/FAILED/TIMEOUT',
+    error_message TEXT COMMENT '错误信息',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_conversation_code (conversation_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话轮次表';
+
 CREATE TABLE a_chat_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    conversation_id VARCHAR(255) NOT NULL COMMENT '会话ID（前端生成的UUID）',
-    message_type VARCHAR(20) NOT NULL COMMENT '消息类型：SYSTEM/USER/ASSISTANT',
+    conversation_code VARCHAR(100) NOT NULL COMMENT '会话标识（32位UUID）',
+    message_code VARCHAR(32) NOT NULL UNIQUE COMMENT '消息唯一标识（32位UUID）',
+    message_index INT NOT NULL DEFAULT 0 COMMENT '消息在会话中的序号',
+    turn_code VARCHAR(32) COMMENT '轮次标识（关联 a_conversation_turns.turn_code）',
+    message_type VARCHAR(20) NOT NULL COMMENT '消息类型：SYSTEM/USER/ASSISTANT/TOOL',
     content TEXT NOT NULL COMMENT '消息内容',
     metadata JSON COMMENT '元数据',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    create_by VARCHAR(64) DEFAULT 'system',
-    update_by VARCHAR(64) DEFAULT 'system',
     is_delete TINYINT DEFAULT 0 COMMENT '逻辑删除：0=正常，1=删除',
-    INDEX idx_conversation_id (conversation_id),
-    INDEX idx_create_time (create_time)
+    INDEX idx_conversation_code (conversation_code),
+    INDEX idx_message_code (message_code),
+    INDEX idx_turn_code (turn_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话历史记录表';
 ```
+
+**数据模型**：
+```
+Conversation (会话)
+    └── ConversationTurn (轮次) - 一次完整的问答
+          ├── USER Message (用户消息)
+          └── ASSISTANT Message (助手消息)
+```
+
+**命名规范**：
+- `conversationCode`：会话业务唯一标识（32位UUID，无连字符）
+- `messageCode`：消息业务唯一标识（32位UUID，无连字符）
+- `turnCode`：轮次业务唯一标识（32位UUID，无连字符）
 
 ### 使用场景
 
@@ -1004,6 +1052,11 @@ User: "帮我预订明天去上海的机票"
 - [ ] 数据库连接池调优
 - [ ] 流式输出背压控制
 - [ ] 异步任务队列
+- [ ] **Turn 缓存优化（多节点部署）**
+  - 当前：ASSISTANT 消息保存时通过 DB 查询获取 turn_code
+  - 优化：使用 Redis 缓存活跃 Turn（conversationCode -> turnCode）
+  - 场景：多节点部署时避免内存缓存不共享问题
+  - 预期：减少 1 次 DB 查询（约 1-5ms）
 
 #### 安全增强
 
