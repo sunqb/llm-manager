@@ -35,7 +35,7 @@
         <druid.version>1.2.23</druid.version>
         <mysql.version>8.3.0</mysql.version>
         <sa-token.version>1.37.0</sa-token.version>
-        <spring-ai.version>1.1.0-M4</spring-ai.version>
+        <spring-ai.version>1.1.0</spring-ai.version>
     </properties>
 
     <dependencyManagement>

@@ -32,6 +32,7 @@ const selectedModelId = ref(null)
 const selectedAgentSlug = ref(null)
 const useAgent = ref(false)
 const useTools = ref(false) // 是否启用工具调用
+const enableReasoning = ref(false) // 是否启用思考过程
 const showToolPanel = ref(false) // 是否显示工具选择面板
 const availableTools = ref({}) // 可用的工具列表 {name -> description}
 const selectedTools = ref([]) // 已选择的工具名称列表
@@ -102,6 +103,9 @@ const scrollToBottom = () => {
     })
 }
 
+// 是否应该自动滚动（折叠操作时不滚动）
+let shouldAutoScroll = true
+
 // 全选/取消全选工具
 const toggleAllTools = () => {
     const allToolNames = Object.keys(availableTools.value)
@@ -124,7 +128,24 @@ const renderMarkdown = (content) => {
     }
 }
 
-watch(messages, scrollToBottom, { deep: true })
+// 切换思考过程的显示/隐藏
+const toggleReasoning = (index) => {
+    if (messages.value[index]) {
+        // 临时禁用自动滚动
+        shouldAutoScroll = false
+        messages.value[index].showReasoning = !messages.value[index].showReasoning
+        // 延迟恢复自动滚动
+        setTimeout(() => {
+            shouldAutoScroll = true
+        }, 100)
+    }
+}
+
+watch(messages, () => {
+    if (shouldAutoScroll) {
+        scrollToBottom()
+    }
+}, { deep: true })
 
 const send = async () => {
     if (!userInput.value.trim() || loading.value) return
@@ -152,7 +173,12 @@ const send = async () => {
 
     // 创建一个临时的assistant消息用于实时追加内容
     const assistantMsgIndex = messages.value.length
-    messages.value.push({ role: 'assistant', content: '' })
+    messages.value.push({
+      role: 'assistant',
+      content: '',
+      reasoning: '', // 思考过程
+      showReasoning: true // 默认展开显示思考过程
+    })
 
     try {
         if (useAgent.value) {
@@ -226,13 +252,25 @@ const send = async () => {
                     }
                 )
             } else {
-                // 使用普通流式API
+                // 使用普通流式API（支持思考模式）
                 await api.chatStream(
                     selectedModelId.value,
                     text,
                     conversationId.value,
                     (chunk) => {
-                        messages.value[assistantMsgIndex].content += chunk
+                        // 处理流式数据：可能是字符串（旧格式）或 {content, reasoning}（新格式）
+                        if (typeof chunk === 'string') {
+                            // 旧格式：直接追加到 content
+                            messages.value[assistantMsgIndex].content += chunk
+                        } else {
+                            // 新格式：分别追加 content 和 reasoning
+                            if (chunk.content) {
+                                messages.value[assistantMsgIndex].content += chunk.content
+                            }
+                            if (chunk.reasoning) {
+                                messages.value[assistantMsgIndex].reasoning += chunk.reasoning
+                            }
+                        }
                     },
                     () => {
                         localStorage.setItem('chatMessages', JSON.stringify(messages.value))
@@ -244,7 +282,8 @@ const send = async () => {
                             content: '错误: ' + (error.message || '请求失败')
                         }
                         loading.value = false
-                    }
+                    },
+                    enableReasoning.value // 传递思考模式开关
                 )
             }
         }
@@ -301,6 +340,11 @@ onUnmounted(() => {
                 <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用工具调用（如天气查询等）">
                     <input type="checkbox" v-model="useTools" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
                     <span class="text-sm text-slate-700">🔧 工具</span>
+                </label>
+                <!-- 思考模式开关 -->
+                <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用思考过程显示（适用于 o1 等思考模型）">
+                    <input type="checkbox" v-model="enableReasoning" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
+                    <span class="text-sm text-slate-700">🧠 思考</span>
                 </label>
                 <!-- 图片URL输入开关 -->
                 <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用图片URL输入（多模态对话）">
@@ -387,7 +431,7 @@ onUnmounted(() => {
                 </div>
 
                 <div :class="[
-                    'max-w-[80%] px-5 py-3.5 rounded-2xl shadow-sm text-sm leading-relaxed break-words markdown-content',
+                    'max-w-[80%] rounded-2xl shadow-sm text-sm leading-relaxed break-words',
                     msg.role === 'user'
                         ? 'bg-indigo-600 text-white rounded-br-sm'
                         : msg.role === 'error'
@@ -395,17 +439,49 @@ onUnmounted(() => {
                             : 'bg-white text-slate-800 border border-slate-100 rounded-bl-sm'
                 ]">
                     <!-- 用户消息 -->
-                    <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+                    <div v-if="msg.role === 'user'" class="px-5 py-3.5">{{ msg.content }}</div>
 
-                    <!-- AI 消息 - 如果内容为空且正在 loading，显示三个点 -->
-                    <div v-else-if="msg.role === 'assistant' && !msg.content && loading" class="flex items-center gap-1">
+                    <!-- AI 消息 - 如果内容和思考都为空且正在 loading，显示三个点 -->
+                    <div v-else-if="msg.role === 'assistant' && !msg.content && !msg.reasoning && loading" class="px-5 py-3.5 flex items-center gap-1">
                         <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0s"></div>
                         <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
                         <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0.4s"></div>
                     </div>
 
-                    <!-- AI 消息 - 有内容时显示 markdown -->
-                    <div v-else-if="msg.role !== 'user'" v-html="renderMarkdown(msg.content)"></div>
+                    <!-- AI 消息 - 有内容或思考时显示 -->
+                    <div v-else-if="msg.role !== 'user'">
+                        <!-- 思考过程（如果有或正在思考） -->
+                        <div v-if="msg.reasoning || (loading && !msg.content && enableReasoning)" class="border-b border-slate-100">
+                            <button
+                                @click.stop="toggleReasoning(idx)"
+                                class="w-full px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
+                            >
+                                <span class="flex items-center gap-2 text-slate-600">
+                                    <span class="text-base">🧠</span>
+                                    <span class="text-xs font-medium">思考过程</span>
+                                    <span v-if="msg.reasoning" class="text-xs text-slate-400">({{ msg.reasoning.length }} 字符)</span>
+                                    <span v-else class="text-xs text-slate-400 animate-pulse">思考中...</span>
+                                </span>
+                                <svg
+                                    class="w-4 h-4 text-slate-400 transition-transform duration-200"
+                                    :class="{ 'rotate-180': msg.showReasoning }"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <!-- 折叠内容 -->
+                            <transition name="reasoning">
+                                <div v-show="msg.showReasoning" class="px-5 py-3 bg-slate-50 border-t border-slate-100 overflow-hidden">
+                                    <div class="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{{ msg.reasoning || '正在思考...' }}</div>
+                                </div>
+                            </transition>
+                        </div>
+                        <!-- 回答内容 -->
+                        <div class="px-5 py-3.5 markdown-content" v-html="renderMarkdown(msg.content)"></div>
+                    </div>
                 </div>
 
                 <!-- Avatar for User (Optional, simplified out for cleanliness or added on right) -->
@@ -460,6 +536,20 @@ onUnmounted(() => {
 .message-leave-to {
   opacity: 0;
   transform: translateY(10px);
+}
+
+/* 思考过程折叠动画 */
+.reasoning-enter-active,
+.reasoning-leave-active {
+  transition: all 0.2s ease;
+  max-height: 500px;
+}
+.reasoning-enter-from,
+.reasoning-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* Markdown 样式 */

@@ -314,7 +314,7 @@ curl -N http://localhost:8080/api/external/agents/{slug}/chat/stream \
 
 **支持 reasoning 的流式响应**（/stream-with-reasoning）:
 
-对于支持思考的模型（如 OpenAI o1），会返回包含 `reasoning_content` 的响应：
+对于支持思考的模型（如 DeepSeek R1、OpenAI o1），会返回包含 `reasoning_content` 的响应：
 
 ```json
 // 包含思考内容
@@ -328,17 +328,18 @@ curl -N http://localhost:8080/api/external/agents/{slug}/chat/stream \
 ```
 
 **说明**：
-- `reasoning_content`: 模型的思考过程（仅支持思考的模型会返回）
+- `reasoning_content`: 模型的思考过程（仅支持思考的模型会返回，如 DeepSeek R1）
 - `content`: 最终的回答内容
 - 前端可以分别显示思考过程和回答，提供更好的用户体验
+- Spring AI 1.1+ 会自动解析 `reasoning_content` 并映射到 `AssistantMessage.getMetadata().get("reasoningContent")`
 
 ## Spring AI Integration Notes
 
-- **版本**: 1.1.0-M4 (需要 Spring Milestones 仓库)
+- **版本**: 1.1.0 (需要 Spring Milestones 仓库)
 - **核心类**: `OpenAiChatModel`, `ChatClient`, `OpenAiApi`
 - **封装位置**: `llm-agent` 模块
 - **配置方式**: 代码动态创建 (非自动配置)
-- **支持特性**: 同步对话、流式对话、温度控制、系统提示词
+- **支持特性**: 同步对话、流式对话、温度控制、系统提示词、思考模式（ReasoningContent）
 
 ---
 

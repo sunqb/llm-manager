@@ -103,11 +103,15 @@ public class ChatController {
                     var output = result.getOutput();
                     String content = output.getText();
 
-                    // 尝试获取 reasoning 内容（如果模型支持）
-                    // Spring AI 可能将其存储在 metadata 中
+                    // 尝试获取 reasoning 内容（如果模型支持，如 DeepSeek R1）
+                    // Spring AI 1.1+ 将 reasoning_content 映射到 metadata 的 "reasoningContent" key
                     String reasoning = null;
-                    if (output.getMetadata() != null) {
-                        Object reasoningObj = output.getMetadata().get("reasoning_content");
+                    if (output.getMetadata() != null && !output.getMetadata().isEmpty()) {
+                        // 尝试多个可能的 key（兼容不同版本和模型）
+                        Object reasoningObj = output.getMetadata().get("reasoningContent");
+                        if (reasoningObj == null) {
+                            reasoningObj = output.getMetadata().get("reasoning_content");
+                        }
                         if (reasoningObj != null) {
                             reasoning = reasoningObj.toString();
                         }

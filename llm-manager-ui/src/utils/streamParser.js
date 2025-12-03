@@ -82,11 +82,17 @@ export function analysisStreamData(dataStr = '', cache = { value: '' }) {
       continue
     }
 
-    // 提取内容
+    // 提取内容和思考过程
     if (jsonData?.choices) {
-      const content = jsonData.choices[0]?.delta?.content
-      if (content) {
-        newData.push(content)
+      const delta = jsonData.choices[0]?.delta
+      const content = delta?.content
+      const reasoning = delta?.reasoning_content
+
+      if (content || reasoning) {
+        newData.push({
+          content: content || '',
+          reasoning: reasoning || ''
+        })
       }
     }
   }
@@ -102,7 +108,7 @@ export function analysisStreamData(dataStr = '', cache = { value: '' }) {
  * 使用 fetch API 处理流式请求
  * @param {string} url - 请求URL
  * @param {object} options - fetch选项
- * @param {function} onChunk - 每次接收到数据块的回调
+ * @param {function} onChunk - 每次接收到数据块的回调 (chunk) 或 ({content, reasoning})
  * @param {function} onComplete - 完成时的回调
  * @param {function} onError - 错误时的回调
  */
@@ -145,7 +151,17 @@ export async function streamFetch(url, options, onChunk, onComplete, onError) {
 
       // 回调每个内容片段
       if (result.list.length > 0) {
-        onChunk?.(result.list.join(''))
+        // 检查是否为新格式（包含 content 和 reasoning）
+        const firstItem = result.list[0]
+        if (typeof firstItem === 'object' && ('content' in firstItem || 'reasoning' in firstItem)) {
+          // 新格式：分别传递 content 和 reasoning
+          result.list.forEach(item => {
+            onChunk?.({ content: item.content, reasoning: item.reasoning })
+          })
+        } else {
+          // 旧格式：直接传递字符串（兼容性）
+          onChunk?.(result.list.join(''))
+        }
       }
     }
   } catch (error) {
