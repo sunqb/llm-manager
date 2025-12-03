@@ -1,6 +1,8 @@
 package com.llmmanager.ops.controller;
 
 import com.llmmanager.agent.config.ToolFunctionManager;
+import com.llmmanager.agent.message.MediaMessage;
+import com.llmmanager.agent.storage.core.service.MediaFileService;
 import com.llmmanager.service.core.entity.Agent;
 import com.llmmanager.service.core.service.AgentService;
 import com.llmmanager.service.orchestration.LlmExecutionService;
@@ -8,10 +10,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import javax.annotation.Resource;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +37,9 @@ public class ChatController {
 
     @Resource
     private ToolFunctionManager toolFunctionManager;
+
+    @Resource
+    private MediaFileService mediaFileService;
 
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -343,6 +352,313 @@ public class ChatController {
                 ))
                 .doOnError(error -> log.error("[ChatController] 智能体流式对话失败，slug: {}, error: {}",
                         slug, error.getMessage(), error));
+    }
+
+    // ==================== 多模态对话接口 ====================
+
+    /**
+     * 图片对话接口（通过 URL）
+     *
+     * 使用场景：传递图片 URL 让 LLM 分析图片内容
+     * 支持模型：GPT-4V、Claude 3 等支持视觉的模型
+     *
+     * @param modelId        模型ID（需要支持视觉的模型，如 gpt-4o）
+     * @param message        用户问题
+     * @param imageUrls      图片 URL 列表（逗号分隔）
+     * @param conversationId 会话ID（可选）
+     * @return 流式响应
+     */
+    @PostMapping(value = "/{modelId}/with-image-url", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatWithImageUrl(
+            @PathVariable Long modelId,
+            @RequestParam String message,
+            @RequestParam List<String> imageUrls,
+            @RequestParam(required = false) String conversationId) {
+
+        log.info("[ChatController] 图片对话请求（URL），模型: {}, 图片数: {}, 会话: {}",
+                modelId, imageUrls.size(), conversationId);
+
+        // 过滤有效的图片URL
+        List<String> validImageUrls = imageUrls.stream()
+                .filter(url -> url != null && !url.trim().isEmpty())
+                .map(String::trim)
+                .toList();
+
+        // 构建媒体内容列表
+        List<MediaMessage.MediaContent> mediaContents = new ArrayList<>();
+        for (String imageUrl : validImageUrls) {
+            mediaContents.add(MediaMessage.MediaContent.ofImageUrl(imageUrl));
+        }
+
+        return executionService.streamChatWithMedia(modelId, message, mediaContents, conversationId)
+                .filter(content -> content != null && !content.isEmpty())
+                .map(content -> {
+                    String escapedContent = content.replace("\\", "\\\\")
+                            .replace("\"", "\\\"")
+                            .replace("\n", "\\n")
+                            .replace("\r", "\\r");
+                    String json = "{\"choices\":[{\"delta\":{\"content\":\"" + escapedContent + "\"}}]}";
+                    return ServerSentEvent.<String>builder().data(json).build();
+                })
+                .concatWith(Flux.just(ServerSentEvent.<String>builder().data("[DONE]").build()))
+                .doOnComplete(() -> {
+                    // 流完成后保存图片URL到数据库
+                    if (conversationId != null && !validImageUrls.isEmpty()) {
+                        try {
+                            mediaFileService.saveImageUrlsForLatestUserMessage(conversationId, validImageUrls);
+                            log.info("[ChatController] 已保存图片URL到数据库，会话: {}, 图片数: {}",
+                                    conversationId, validImageUrls.size());
+                        } catch (Exception e) {
+                            log.error("[ChatController] 保存图片URL失败: {}", e.getMessage(), e);
+                        }
+                    }
+                })
+                .doOnError(error -> log.error("[ChatController] 图片对话失败: {}", error.getMessage(), error));
+    }
+
+    /**
+     * 图片对话接口（通过文件上传）
+     *
+     * 使用场景：上传本地图片文件让 LLM 分析
+     * 支持模型：GPT-4V、Claude 3 等支持视觉的模型
+     *
+     * @param modelId        模型ID（需要支持视觉的模型，如 gpt-4o）
+     * @param message        用户问题
+     * @param images         图片文件列表
+     * @param conversationId 会话ID（可选）
+     * @return 流式响应
+     */
+    @PostMapping(value = "/{modelId}/with-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+                 produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatWithImage(
+            @PathVariable Long modelId,
+            @RequestParam String message,
+            @RequestParam("images") List<MultipartFile> images,
+            @RequestParam(required = false) String conversationId) {
+
+        log.info("[ChatController] 图片对话请求（上传），模型: {}, 图片数: {}", modelId, images.size());
+
+        // 构建媒体内容列表
+        List<MediaMessage.MediaContent> mediaContents = new ArrayList<>();
+        for (MultipartFile image : images) {
+            if (image != null && !image.isEmpty()) {
+                try {
+                    byte[] imageData = image.getBytes();
+                    String mimeType = image.getContentType();
+                    if (mimeType == null) {
+                        mimeType = "image/png";  // 默认 PNG
+                    }
+                    mediaContents.add(MediaMessage.MediaContent.ofImageData(imageData, mimeType));
+                    log.debug("[ChatController] 处理图片: {}, 大小: {} bytes, MIME: {}",
+                            image.getOriginalFilename(), imageData.length, mimeType);
+                } catch (IOException e) {
+                    log.error("[ChatController] 读取图片失败: {}", image.getOriginalFilename(), e);
+                }
+            }
+        }
+
+        if (mediaContents.isEmpty()) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .data("{\"error\":\"没有有效的图片\"}")
+                    .build());
+        }
+
+        return executionService.streamChatWithMedia(modelId, message, mediaContents, conversationId)
+                .filter(content -> content != null && !content.isEmpty())
+                .map(content -> {
+                    String escapedContent = content.replace("\\", "\\\\")
+                            .replace("\"", "\\\"")
+                            .replace("\n", "\\n")
+                            .replace("\r", "\\r");
+                    String json = "{\"choices\":[{\"delta\":{\"content\":\"" + escapedContent + "\"}}]}";
+                    return ServerSentEvent.<String>builder().data(json).build();
+                })
+                .concatWith(Flux.just(ServerSentEvent.<String>builder().data("[DONE]").build()))
+                .doOnError(error -> log.error("[ChatController] 图片对话失败: {}", error.getMessage(), error));
+    }
+
+    /**
+     * 同步图片对话接口（通过 URL）
+     *
+     * @param modelId        模型ID
+     * @param message        用户问题
+     * @param imageUrls      图片 URL 列表
+     * @param conversationId 会话ID（可选）
+     * @return 回复内容
+     */
+    @PostMapping("/{modelId}/with-image-url/sync")
+    public Map<String, Object> chatWithImageUrlSync(
+            @PathVariable Long modelId,
+            @RequestParam String message,
+            @RequestParam List<String> imageUrls,
+            @RequestParam(required = false) String conversationId) {
+
+        log.info("[ChatController] 同步图片对话请求，模型: {}, 图片数: {}", modelId, imageUrls.size());
+
+        // 过滤有效的图片URL
+        List<String> validImageUrls = imageUrls.stream()
+                .filter(url -> url != null && !url.trim().isEmpty())
+                .map(String::trim)
+                .toList();
+
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // 构建媒体内容列表
+            List<MediaMessage.MediaContent> mediaContents = new ArrayList<>();
+            for (String imageUrl : validImageUrls) {
+                mediaContents.add(MediaMessage.MediaContent.ofImageUrl(imageUrl));
+            }
+
+            String result = executionService.chatWithMedia(modelId, message, mediaContents, conversationId);
+            response.put("success", true);
+            response.put("message", result);
+
+            // 对话成功后保存图片URL到数据库
+            if (conversationId != null && !validImageUrls.isEmpty()) {
+                try {
+                    mediaFileService.saveImageUrlsForLatestUserMessage(conversationId, validImageUrls);
+                    log.info("[ChatController] 已保存图片URL到数据库，会话: {}, 图片数: {}",
+                            conversationId, validImageUrls.size());
+                } catch (Exception e) {
+                    log.error("[ChatController] 保存图片URL失败: {}", e.getMessage(), e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[ChatController] 同步图片对话失败", e);
+            response.put("success", false);
+            response.put("error", e.getMessage());
+        }
+        return response;
+    }
+
+    // ==================== 文件对话接口 ====================
+
+    /**
+     * 文件对话接口（将文件内容作为上下文）
+     *
+     * 使用场景：上传文本文件（txt、md、json、代码文件等），将内容作为上下文让 LLM 分析
+     * 注意：这不是多模态，而是将文件内容提取后作为文本上下文
+     *
+     * @param modelId        模型ID
+     * @param message        用户问题
+     * @param files          文件列表
+     * @param conversationId 会话ID（可选）
+     * @return 流式响应
+     */
+    @PostMapping(value = "/{modelId}/with-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+                 produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatWithFile(
+            @PathVariable Long modelId,
+            @RequestParam String message,
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(required = false) String conversationId) {
+
+        log.info("[ChatController] 文件对话请求，模型: {}, 文件数: {}", modelId, files.size());
+
+        // 构建包含文件内容的消息
+        StringBuilder contextBuilder = new StringBuilder();
+
+        for (MultipartFile file : files) {
+            if (file != null && !file.isEmpty()) {
+                try {
+                    String fileName = file.getOriginalFilename();
+                    String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+
+                    contextBuilder.append("\n--- 文件: ").append(fileName).append(" ---\n");
+                    contextBuilder.append(content);
+                    contextBuilder.append("\n--- 文件结束 ---\n\n");
+
+                    log.debug("[ChatController] 读取文件: {}, 大小: {} bytes", fileName, content.length());
+                } catch (IOException e) {
+                    log.error("[ChatController] 读取文件失败: {}", file.getOriginalFilename(), e);
+                }
+            }
+        }
+
+        if (contextBuilder.isEmpty()) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .data("{\"error\":\"没有有效的文件内容\"}")
+                    .build());
+        }
+
+        // 将文件内容作为上下文，与用户消息组合
+        String fullMessage = "以下是相关文件内容，请根据这些内容回答问题：\n"
+                + contextBuilder
+                + "\n用户问题: " + message;
+
+        return executionService.streamChat(modelId, fullMessage, conversationId)
+                .filter(content -> content != null && !content.isEmpty())
+                .map(content -> {
+                    String escapedContent = content.replace("\\", "\\\\")
+                            .replace("\"", "\\\"")
+                            .replace("\n", "\\n")
+                            .replace("\r", "\\r");
+                    String json = "{\"choices\":[{\"delta\":{\"content\":\"" + escapedContent + "\"}}]}";
+                    return ServerSentEvent.<String>builder().data(json).build();
+                })
+                .concatWith(Flux.just(ServerSentEvent.<String>builder().data("[DONE]").build()))
+                .doOnError(error -> log.error("[ChatController] 文件对话失败: {}", error.getMessage(), error));
+    }
+
+    /**
+     * 同步文件对话接口
+     *
+     * @param modelId        模型ID
+     * @param message        用户问题
+     * @param files          文件列表
+     * @param conversationId 会话ID（可选）
+     * @return 回复内容
+     */
+    @PostMapping(value = "/{modelId}/with-file/sync", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Map<String, Object> chatWithFileSync(
+            @PathVariable Long modelId,
+            @RequestParam String message,
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(required = false) String conversationId) {
+
+        log.info("[ChatController] 同步文件对话请求，模型: {}, 文件数: {}", modelId, files.size());
+
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // 构建包含文件内容的消息
+            StringBuilder contextBuilder = new StringBuilder();
+
+            for (MultipartFile file : files) {
+                if (file != null && !file.isEmpty()) {
+                    String fileName = file.getOriginalFilename();
+                    String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+
+                    contextBuilder.append("\n--- 文件: ").append(fileName).append(" ---\n");
+                    contextBuilder.append(content);
+                    contextBuilder.append("\n--- 文件结束 ---\n\n");
+                }
+            }
+
+            if (contextBuilder.isEmpty()) {
+                response.put("success", false);
+                response.put("error", "没有有效的文件内容");
+                return response;
+            }
+
+            // 将文件内容作为上下文
+            String fullMessage = "以下是相关文件内容，请根据这些内容回答问题：\n"
+                    + contextBuilder
+                    + "\n用户问题: " + message;
+
+            // 使用普通流式接口获取结果
+            StringBuilder resultBuilder = new StringBuilder();
+            executionService.streamChat(modelId, fullMessage, conversationId)
+                    .toStream()
+                    .forEach(resultBuilder::append);
+
+            response.put("success", true);
+            response.put("message", resultBuilder.toString());
+        } catch (Exception e) {
+            log.error("[ChatController] 同步文件对话失败", e);
+            response.put("success", false);
+            response.put("error", e.getMessage());
+        }
+        return response;
     }
 }
 

@@ -1,7 +1,11 @@
 package com.llmmanager.agent.message;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.content.Media;
+import org.springframework.util.MimeType;
+import org.springframework.util.MimeTypeUtils;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -10,7 +14,7 @@ import java.util.stream.Collectors;
  * 消息转换器
  * 负责在自定义 Message 和 Spring AI Message 之间进行转换
  *
- * 注意：多模态支持（图片、文件等）待后续阶段完善
+ * 支持多模态消息（图片、文件等）
  */
 @Slf4j
 public class MessageConverter {
@@ -26,10 +30,9 @@ public class MessageConverter {
         return switch (message.getMessageType()) {
             case SYSTEM -> new org.springframework.ai.chat.messages.SystemMessage(message.getContent());
             case USER -> {
-                // TODO: 多模态消息支持（Phase 3）
-                if (message instanceof MediaMessage mediaMessage) {
-                    // 暂时只返回文本内容
-                    yield new org.springframework.ai.chat.messages.UserMessage(mediaMessage.getContent());
+                // 多模态消息支持
+                if (message instanceof MediaMessage mediaMessage && mediaMessage.hasMedia()) {
+                    yield convertMediaMessage(mediaMessage);
                 } else {
                     yield new org.springframework.ai.chat.messages.UserMessage(message.getContent());
                 }
@@ -44,6 +47,76 @@ public class MessageConverter {
                 }
             }
             default -> throw new IllegalArgumentException("不支持的消息类型: " + message.getMessageType());
+        };
+    }
+
+    /**
+     * 转换多模态消息为 Spring AI UserMessage
+     */
+    private static org.springframework.ai.chat.messages.UserMessage convertMediaMessage(MediaMessage mediaMessage) {
+        List<Media> mediaList = new ArrayList<>();
+
+        for (MediaMessage.MediaContent content : mediaMessage.getMediaContents()) {
+            Media media = convertToSpringAiMedia(content);
+            if (media != null) {
+                mediaList.add(media);
+            }
+        }
+
+        if (mediaList.isEmpty()) {
+            // 没有有效的媒体内容，返回纯文本消息
+            return new org.springframework.ai.chat.messages.UserMessage(mediaMessage.getContent());
+        }
+
+        // 使用 Builder 创建带媒体内容的 UserMessage（Spring AI 1.1.0+ API）
+        return org.springframework.ai.chat.messages.UserMessage.builder()
+                .text(mediaMessage.getContent())
+                .media(mediaList)
+                .build();
+    }
+
+    /**
+     * 将 MediaContent 转换为 Spring AI Media
+     */
+    private static Media convertToSpringAiMedia(MediaMessage.MediaContent content) {
+        try {
+            MimeType mimeType = parseMimeType(content);
+
+            if (content.isUrlMode()) {
+                // URL 模式：使用构造器
+                return new Media(mimeType, URI.create(content.getMediaUrl()));
+            } else if (content.isDataMode()) {
+                // 数据模式（Base64 或原始字节）：使用 Builder（Spring AI 1.1.0+ API）
+                return Media.builder()
+                        .mimeType(mimeType)
+                        .data(content.getMediaData())
+                        .build();
+            } else {
+                log.warn("[MessageConverter] 媒体内容无效，既没有 URL 也没有 Data");
+                return null;
+            }
+        } catch (Exception e) {
+            log.error("[MessageConverter] 转换媒体内容失败: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * 解析 MIME 类型
+     */
+    private static MimeType parseMimeType(MediaMessage.MediaContent content) {
+        // 优先使用显式指定的 mimeType
+        if (content.getMimeType() != null && !content.getMimeType().isEmpty()) {
+            return MimeType.valueOf(content.getMimeType());
+        }
+
+        // 根据 MediaType 推断默认 MIME 类型
+        return switch (content.getMediaType()) {
+            case IMAGE -> MimeTypeUtils.IMAGE_PNG;  // 默认 PNG
+            case DOCUMENT -> MimeType.valueOf("application/pdf");  // 默认 PDF
+            case AUDIO -> MimeType.valueOf("audio/mpeg");  // 默认 MP3
+            case VIDEO -> MimeType.valueOf("video/mp4");  // 默认 MP4
+            default -> MimeTypeUtils.APPLICATION_OCTET_STREAM;
         };
     }
 
@@ -75,6 +148,7 @@ public class MessageConverter {
             return SystemMessage.of(content);
         } else if (springAiMessage instanceof org.springframework.ai.chat.messages.UserMessage userMsg) {
             content = userMsg.getText();
+            // TODO: 如果需要，可以解析 UserMessage 中的 Media 并转换为 MediaMessage
             return UserMessage.of(content);
         } else if (springAiMessage instanceof org.springframework.ai.chat.messages.AssistantMessage assistantMsg) {
             content = assistantMsg.getText();

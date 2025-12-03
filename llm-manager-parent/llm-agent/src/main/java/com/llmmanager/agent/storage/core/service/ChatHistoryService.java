@@ -101,4 +101,12 @@ public interface ChatHistoryService {
      * @return 删除的记录数
      */
     int deleteExpiredMessages(int retentionDays);
+
+    /**
+     * 查询指定会话的最新用户消息
+     *
+     * @param conversationCode 会话标识
+     * @return 最新的用户消息，如果没有则返回null
+     */
+    ChatHistory findLatestUserMessage(String conversationCode);
 }

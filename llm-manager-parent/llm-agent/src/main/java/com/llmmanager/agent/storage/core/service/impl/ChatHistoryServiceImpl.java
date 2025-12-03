@@ -144,4 +144,12 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
         // 软删除超过保留天数的记录
         return chatHistoryMapper.deleteExpiredMessages(expireTime);
     }
+
+    @Override
+    public ChatHistory findLatestUserMessage(String conversationCode) {
+        if (conversationCode == null) {
+            return null;
+        }
+        return chatHistoryMapper.selectLatestUserMessage(conversationCode);
+    }
 }

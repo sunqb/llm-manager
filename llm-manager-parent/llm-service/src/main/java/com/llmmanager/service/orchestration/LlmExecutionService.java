@@ -2,6 +2,7 @@ package com.llmmanager.service.orchestration;
 
 import com.llmmanager.agent.agent.LlmChatAgent;
 import com.llmmanager.agent.dto.ChatRequest;
+import com.llmmanager.agent.message.MediaMessage;
 import com.llmmanager.service.core.service.ChannelService;
 import com.llmmanager.service.core.service.LlmModelService;
 import com.llmmanager.service.core.entity.Agent;
@@ -325,6 +326,81 @@ public class LlmExecutionService {
                 .userMessage(userMessage)
                 .enableTools(true)  // 启用工具调用
                 .toolNames(toolNames)  // 指定工具列表（null 表示使用所有）
+                .build();
+    }
+
+    // ==================== 多模态对话支持 ====================
+
+    /**
+     * 多模态流式对话（支持图片等媒体内容）
+     *
+     * @param modelId        模型ID
+     * @param userMessage    用户消息文本
+     * @param mediaContents  媒体内容列表（图片、文件等）
+     * @param conversationId 会话ID（可选）
+     * @return 流式响应
+     */
+    public Flux<String> streamChatWithMedia(Long modelId, String userMessage,
+                                             List<MediaMessage.MediaContent> mediaContents,
+                                             String conversationId) {
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
+
+        Channel channel = getChannel(model);
+        ChatRequest request = buildChatRequestWithMedia(channel, model, userMessage, null,
+                model.getTemperature(), mediaContents);
+
+        if (conversationId != null && !conversationId.trim().isEmpty()) {
+            return llmChatAgent.streamChat(request, conversationId);
+        } else {
+            return llmChatAgent.streamChat(request, null);
+        }
+    }
+
+    /**
+     * 多模态同步对话（支持图片等媒体内容）
+     *
+     * @param modelId        模型ID
+     * @param userMessage    用户消息文本
+     * @param mediaContents  媒体内容列表（图片、文件等）
+     * @param conversationId 会话ID（可选）
+     * @return 回复内容
+     */
+    public String chatWithMedia(Long modelId, String userMessage,
+                                 List<MediaMessage.MediaContent> mediaContents,
+                                 String conversationId) {
+        LlmModel model = llmModelService.getById(modelId);
+        if (model == null) {
+            throw new RuntimeException("Model not found");
+        }
+
+        Channel channel = getChannel(model);
+        ChatRequest request = buildChatRequestWithMedia(channel, model, userMessage, null,
+                model.getTemperature(), mediaContents);
+        return llmChatAgent.chat(request, conversationId);
+    }
+
+    /**
+     * 构建带媒体内容的 ChatRequest
+     */
+    private ChatRequest buildChatRequestWithMedia(Channel channel, LlmModel model,
+                                                   String userMessage, String systemPrompt,
+                                                   Double temperature,
+                                                   List<MediaMessage.MediaContent> mediaContents) {
+        String apiKey = StringUtils.hasText(channel.getApiKey()) ? channel.getApiKey() : defaultApiKey;
+        String baseUrl = StringUtils.hasText(channel.getBaseUrl()) ? channel.getBaseUrl() : defaultBaseUrl;
+
+        return ChatRequest.builder()
+                .channelId(channel.getId())
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelIdentifier(model.getModelIdentifier())
+                .temperature(temperature)
+                .systemPrompt(systemPrompt)
+                .userMessage(userMessage)
+                .mediaContents(mediaContents)  // 媒体内容
                 .build();
     }
 

@@ -43,4 +43,16 @@ public interface MediaFileMapper extends BaseMapper<MediaFile> {
      */
     @Update("UPDATE a_media_files SET is_delete = 1 WHERE conversation_code = #{conversationCode}")
     int softDeleteByConversationCode(@Param("conversationCode") String conversationCode);
+
+    /**
+     * 软删除指定消息的所有媒体文件
+     */
+    @Update("UPDATE a_media_files SET is_delete = 1 WHERE message_code = #{messageCode}")
+    int softDeleteByMessageCode(@Param("messageCode") String messageCode);
+
+    /**
+     * 统计指定消息的媒体文件数量
+     */
+    @Select("SELECT COUNT(*) FROM a_media_files WHERE message_code = #{messageCode} AND is_delete = 0")
+    int countByMessageCode(@Param("messageCode") String messageCode);
 }

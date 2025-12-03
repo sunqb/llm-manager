@@ -35,6 +35,8 @@ const useTools = ref(false) // 是否启用工具调用
 const showToolPanel = ref(false) // 是否显示工具选择面板
 const availableTools = ref({}) // 可用的工具列表 {name -> description}
 const selectedTools = ref([]) // 已选择的工具名称列表
+const useImageUrl = ref(false) // 是否启用图片URL输入
+const imageUrlInput = ref('') // 图片URL输入（多个用逗号分隔）
 const messages = ref([])
 const userInput = ref('')
 const loading = ref(false)
@@ -128,8 +130,24 @@ const send = async () => {
     if (!userInput.value.trim() || loading.value) return
 
     const text = userInput.value
-    messages.value.push({ role: 'user', content: text })
+
+    // 解析图片URL列表
+    const imageUrls = useImageUrl.value && imageUrlInput.value.trim()
+        ? imageUrlInput.value.split(',').map(url => url.trim()).filter(url => url)
+        : []
+
+    // 构建用户消息显示内容
+    let userMessageContent = text
+    if (imageUrls.length > 0) {
+        userMessageContent = `${text}\n\n📎 附带图片: ${imageUrls.length}张`
+    }
+
+    messages.value.push({ role: 'user', content: userMessageContent, imageUrls: imageUrls })
     userInput.value = ''
+    // 发送成功后清空图片URL输入
+    if (imageUrls.length > 0) {
+        imageUrlInput.value = ''
+    }
     loading.value = true
 
     // 创建一个临时的assistant消息用于实时追加内容
@@ -154,6 +172,28 @@ const send = async () => {
                 },
                 (error) => {
                     // 错误处理
+                    messages.value[assistantMsgIndex] = {
+                        role: 'error',
+                        content: '错误: ' + (error.message || '请求失败')
+                    }
+                    loading.value = false
+                }
+            )
+        } else if (imageUrls.length > 0) {
+            // 使用图片URL流式API（多模态）
+            await api.chatStreamWithImageUrl(
+                selectedModelId.value,
+                text,
+                imageUrls,
+                conversationId.value,
+                (chunk) => {
+                    messages.value[assistantMsgIndex].content += chunk
+                },
+                () => {
+                    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
+                    loading.value = false
+                },
+                (error) => {
                     messages.value[assistantMsgIndex] = {
                         role: 'error',
                         content: '错误: ' + (error.message || '请求失败')
@@ -261,6 +301,11 @@ onUnmounted(() => {
                 <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用工具调用（如天气查询等）">
                     <input type="checkbox" v-model="useTools" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
                     <span class="text-sm text-slate-700">🔧 工具</span>
+                </label>
+                <!-- 图片URL输入开关 -->
+                <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用图片URL输入（多模态对话）">
+                    <input type="checkbox" v-model="useImageUrl" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
+                    <span class="text-sm text-slate-700">🖼️ 图片</span>
                 </label>
                 <!-- 工具选择下拉面板（仅当启用工具时显示） -->
                 <div v-if="useTools && Object.keys(availableTools).length > 0" class="relative" ref="toolPanelRef">
@@ -371,6 +416,19 @@ onUnmounted(() => {
     <!-- Input Area -->
     <div class="p-4 bg-white border-t border-slate-200">
         <div class="relative max-w-4xl mx-auto">
+            <!-- 图片URL输入框（仅当启用时显示） -->
+            <div v-if="useImageUrl && !useAgent" class="mb-3">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-sm text-slate-600">🖼️ 图片URL</span>
+                    <span class="text-xs text-slate-400">（多个URL用逗号分隔）</span>
+                </div>
+                <input
+                    v-model="imageUrlInput"
+                    class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                    placeholder="https://example.com/image1.jpg, https://example.com/image2.png"
+                    :disabled="loading"
+                />
+            </div>
             <input 
                 @keyup.enter="send" 
                 v-model="userInput" 

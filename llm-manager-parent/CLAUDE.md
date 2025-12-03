@@ -268,6 +268,24 @@ curl -N -X POST "http://localhost:8080/api/chat/agents/{slug}/stream?conversatio
   -H "Cookie: satoken={token}" \
   -H "Content-Type: text/plain" \
   -d "继续上次的话题"
+
+# 图片对话（通过 URL，流式）
+curl -N -X POST "http://localhost:8080/api/chat/{modelId}/with-image-url?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -d "message=这张图片里有什么？" \
+  -d "imageUrls=https://example.com/image.jpg"
+
+# 图片对话（通过 URL，同步）
+curl -X POST "http://localhost:8080/api/chat/{modelId}/with-image-url/sync?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -d "message=描述这张图片" \
+  -d "imageUrls=https://example.com/image.jpg"
+
+# 图片对话（文件上传）
+curl -X POST "http://localhost:8080/api/chat/{modelId}/with-image?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -F "message=这是什么？" \
+  -F "images=@/path/to/image.png"
 ```
 
 ### 外部 Agent API (需 API Key)
@@ -382,6 +400,41 @@ Conversation (会话)
 - `conversationCode`：会话业务唯一标识（32位UUID，无连字符）
 - `messageCode`：消息业务唯一标识（32位UUID，无连字符）
 - `turnCode`：轮次业务唯一标识（32位UUID，无连字符）
+- `fileCode`：媒体文件业务唯一标识（32位UUID，无连字符）
+
+### 媒体文件存储
+
+多模态对话中的图片 URL 会自动保存到数据库（`a_media_files` 表），与对应的用户消息关联。
+
+**核心 Service**：
+
+```java
+// MediaFileService 接口（位于 storage/core/service/）
+public interface MediaFileService {
+    // 保存图片URL（便捷方法）
+    MediaFile saveImageUrl(String conversationCode, String messageCode,
+                           String imageUrl, String mimeType);
+
+    // 批量保存图片URL
+    List<MediaFile> saveImageUrls(String conversationCode, String messageCode,
+                                   List<String> imageUrls);
+
+    // 为最新的用户消息保存图片URL（自动查找最新 USER 消息）
+    List<MediaFile> saveImageUrlsForLatestUserMessage(String conversationCode,
+                                                       List<String> imageUrls);
+
+    // 查询相关方法
+    List<MediaFile> findByMessageCode(String messageCode);
+    List<MediaFile> findByConversationCode(String conversationCode);
+}
+```
+
+**数据关联**：
+```
+a_chat_history (用户消息)
+    └── message_code ────> a_media_files (媒体文件)
+                               └── file_url (图片URL)
+```
 
 ---
 

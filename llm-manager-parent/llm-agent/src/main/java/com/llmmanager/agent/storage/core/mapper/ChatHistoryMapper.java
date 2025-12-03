@@ -60,4 +60,12 @@ public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
     @Update("UPDATE a_chat_history SET is_delete = 1, update_time = NOW() " +
             "WHERE conversation_code = #{conversationCode} AND is_delete = 0")
     int softDeleteByConversationCode(@Param("conversationCode") String conversationCode);
+
+    /**
+     * 查询指定会话的最新用户消息
+     */
+    @Select("SELECT * FROM a_chat_history " +
+            "WHERE conversation_code = #{conversationCode} AND message_type = 'USER' AND is_delete = 0 " +
+            "ORDER BY create_time DESC LIMIT 1")
+    ChatHistory selectLatestUserMessage(@Param("conversationCode") String conversationCode);
 }

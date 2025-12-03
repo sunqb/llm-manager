@@ -3,22 +3,28 @@ package com.llmmanager.agent.agent;
 import com.llmmanager.agent.advisor.AdvisorManager;
 import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.agent.dto.ChatRequest;
+import com.llmmanager.agent.message.MediaMessage;
+import com.llmmanager.agent.message.MediaType;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MimeType;
+import org.springframework.util.MimeTypeUtils;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Resource;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -108,8 +114,22 @@ public class LlmChatAgent {
             promptBuilder.system(request.getSystemPrompt());
         }
 
-        // 添加用户消息
-        promptBuilder.user(request.getUserMessage());
+        // 添加用户消息（支持多模态）
+        if (request.hasMedia()) {
+            // 多模态消息：文本 + 媒体内容
+            promptBuilder.user(userSpec -> {
+                userSpec.text(request.getUserMessage());
+                // 转换并添加媒体内容
+                Media[] mediaArray = convertToSpringAiMedia(request.getMediaContents());
+                if (mediaArray.length > 0) {
+                    userSpec.media(mediaArray);
+                    log.info("[LlmChatAgent] 添加多模态内容，媒体数量: {}", mediaArray.length);
+                }
+            });
+        } else {
+            // 纯文本消息
+            promptBuilder.user(request.getUserMessage());
+        }
 
         // 如果启用工具，注册工具对象（使用 Spring AI 原生 @Tool 注解方式）
         if (Boolean.TRUE.equals(request.getEnableTools())) {
@@ -185,8 +205,22 @@ public class LlmChatAgent {
             promptBuilder.system(request.getSystemPrompt());
         }
 
-        // 添加用户消息
-        promptBuilder.user(request.getUserMessage());
+        // 添加用户消息（支持多模态）
+        if (request.hasMedia()) {
+            // 多模态消息：文本 + 媒体内容
+            promptBuilder.user(userSpec -> {
+                userSpec.text(request.getUserMessage());
+                // 转换并添加媒体内容
+                Media[] mediaArray = convertToSpringAiMedia(request.getMediaContents());
+                if (mediaArray.length > 0) {
+                    userSpec.media(mediaArray);
+                    log.info("[LlmChatAgent] 添加多模态内容，媒体数量: {}", mediaArray.length);
+                }
+            });
+        } else {
+            // 纯文本消息
+            promptBuilder.user(request.getUserMessage());
+        }
 
         // 如果启用工具，注册工具对象（使用 Spring AI 原生 @Tool 注解方式）
         if (Boolean.TRUE.equals(request.getEnableTools())) {
@@ -396,5 +430,73 @@ public class LlmChatAgent {
         if (chatMemory != null && conversationId != null) {
             chatMemory.clear(conversationId);
         }
+    }
+
+    // ==================== 多模态支持 ====================
+
+    /**
+     * 将 MediaContent 列表转换为 Spring AI Media 数组
+     *
+     * @param mediaContents 媒体内容列表
+     * @return Spring AI Media 数组
+     */
+    private Media[] convertToSpringAiMedia(List<MediaMessage.MediaContent> mediaContents) {
+        if (mediaContents == null || mediaContents.isEmpty()) {
+            return new Media[0];
+        }
+
+        List<Media> mediaList = new ArrayList<>();
+        for (MediaMessage.MediaContent content : mediaContents) {
+            Media media = convertSingleMedia(content);
+            if (media != null) {
+                mediaList.add(media);
+            }
+        }
+        return mediaList.toArray(new Media[0]);
+    }
+
+    /**
+     * 转换单个 MediaContent 为 Spring AI Media
+     */
+    private Media convertSingleMedia(MediaMessage.MediaContent content) {
+        try {
+            MimeType mimeType = parseMimeType(content);
+
+            if (content.isUrlMode()) {
+                // URL 模式
+                return new Media(mimeType, URI.create(content.getMediaUrl()));
+            } else if (content.isDataMode()) {
+                // 数据模式（Base64 或原始字节）
+                return Media.builder()
+                        .mimeType(mimeType)
+                        .data(content.getMediaData())
+                        .build();
+            } else {
+                log.warn("[LlmChatAgent] 媒体内容无效，既没有 URL 也没有 Data");
+                return null;
+            }
+        } catch (Exception e) {
+            log.error("[LlmChatAgent] 转换媒体内容失败: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * 解析 MIME 类型
+     */
+    private MimeType parseMimeType(MediaMessage.MediaContent content) {
+        // 优先使用显式指定的 mimeType
+        if (content.getMimeType() != null && !content.getMimeType().isEmpty()) {
+            return MimeType.valueOf(content.getMimeType());
+        }
+
+        // 根据 MediaType 推断默认 MIME 类型
+        return switch (content.getMediaType()) {
+            case IMAGE -> MimeTypeUtils.IMAGE_PNG;  // 默认 PNG
+            case DOCUMENT -> MimeType.valueOf("application/pdf");  // 默认 PDF
+            case AUDIO -> MimeType.valueOf("audio/mpeg");  // 默认 MP3
+            case VIDEO -> MimeType.valueOf("video/mp4");  // 默认 MP4
+            default -> MimeTypeUtils.APPLICATION_OCTET_STREAM;
+        };
     }
 }

@@ -148,5 +148,36 @@ export default {
       onComplete,
       onError
     )
+  },
+
+  // Chat - 流式（带图片 URL，多模态）
+  chatStreamWithImageUrl(modelId, message, imageUrls, conversationId, onChunk, onComplete, onError) {
+    const token = localStorage.getItem('satoken')
+
+    // 构建 URL 查询参数
+    const params = new URLSearchParams()
+    params.append('message', message)
+    if (conversationId) {
+      params.append('conversationId', conversationId)
+    }
+    // 支持传递 imageUrls 数组
+    if (imageUrls && imageUrls.length > 0) {
+      imageUrls.forEach(url => params.append('imageUrls', url))
+    }
+
+    const url = `http://localhost:8080/api/chat/${modelId}/with-image-url?${params.toString()}`
+
+    return streamFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'satoken': token || ''
+        }
+      },
+      onChunk,
+      onComplete,
+      onError
+    )
   }
 }

@@ -1,5 +1,6 @@
 package com.llmmanager.agent.dto;
 
+import com.llmmanager.agent.message.MediaMessage;
 import lombok.Builder;
 import lombok.Data;
 
@@ -72,6 +73,12 @@ public class ChatRequest {
      */
     private String userMessage;
 
+    /**
+     * 媒体内容列表（图片、文件等）
+     * 支持多模态对话（如 GPT-4V 图片理解）
+     */
+    private java.util.List<MediaMessage.MediaContent> mediaContents;
+
     // ==================== 历史记忆相关 ====================
 
     /**
@@ -127,4 +134,13 @@ public class ChatRequest {
      * 用户标识（用于审计日志）
      */
     private String userId;
+
+    // ==================== 辅助方法 ====================
+
+    /**
+     * 是否包含媒体内容（图片、文件等）
+     */
+    public boolean hasMedia() {
+        return mediaContents != null && !mediaContents.isEmpty();
+    }
 }

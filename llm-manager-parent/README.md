@@ -679,6 +679,103 @@ function continueConversation() {
 | `POST /api/chat/{modelId}/stream` | ✅ 可选 | 流式对话（SseEmitter） |
 | `POST /api/chat/{modelId}` | ❌ 不支持 | 同步对话 |
 
+## 🖼️ 多模态对话
+
+### 功能概述
+
+支持图片对话（Vision），让 LLM 分析图片内容并回答问题。
+
+**支持的模型**：GPT-4V、Claude 3 等支持视觉的模型
+
+### 多模态 API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `POST /api/chat/{modelId}/with-image-url` | POST | 图片对话（通过URL，流式） |
+| `POST /api/chat/{modelId}/with-image-url/sync` | POST | 图片对话（通过URL，同步） |
+| `POST /api/chat/{modelId}/with-image` | POST | 图片对话（文件上传，流式） |
+| `POST /api/chat/{modelId}/with-file` | POST | 文件对话（文本文件作为上下文） |
+
+### 使用示例
+
+#### 图片URL对话
+
+```bash
+# 流式响应
+curl -N -X POST "http://localhost:8080/api/chat/1/with-image-url?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -d "message=这张图片里有什么？" \
+  -d "imageUrls=https://example.com/image1.jpg" \
+  -d "imageUrls=https://example.com/image2.jpg"
+
+# 同步响应
+curl -X POST "http://localhost:8080/api/chat/1/with-image-url/sync?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -d "message=描述这张图片" \
+  -d "imageUrls=https://example.com/image.jpg"
+```
+
+#### 图片上传对话
+
+```bash
+curl -X POST "http://localhost:8080/api/chat/1/with-image?conversationId=conv-123" \
+  -H "Cookie: satoken={token}" \
+  -F "message=这是什么？" \
+  -F "images=@/path/to/image1.png" \
+  -F "images=@/path/to/image2.jpg"
+```
+
+### 媒体文件存储
+
+多模态对话中的图片 URL 会自动保存到数据库（`a_media_files` 表），与对应的用户消息关联。
+
+**数据库表结构**：
+
+```sql
+CREATE TABLE a_media_files (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_code VARCHAR(32) NOT NULL UNIQUE COMMENT '文件唯一标识',
+    conversation_code VARCHAR(100) COMMENT '会话标识',
+    message_code VARCHAR(32) COMMENT '消息标识（关联 a_chat_history）',
+    media_type VARCHAR(20) NOT NULL COMMENT '媒体类型：IMAGE/FILE/AUDIO/VIDEO',
+    mime_type VARCHAR(100) COMMENT 'MIME类型',
+    file_name VARCHAR(255) COMMENT '文件名',
+    file_url TEXT COMMENT '文件URL（外部链接）',
+    file_size BIGINT COMMENT '文件大小(bytes)',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_conversation_code (conversation_code),
+    INDEX idx_message_code (message_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='媒体文件表';
+```
+
+**数据关联**：
+```
+a_chat_history (用户消息)
+    └── message_code ────> a_media_files (媒体文件)
+                               └── file_url (图片URL)
+```
+
+**核心 Service**：
+
+```java
+// MediaFileService 接口
+public interface MediaFileService {
+    // 保存图片URL（便捷方法）
+    MediaFile saveImageUrl(String conversationCode, String messageCode,
+                           String imageUrl, String mimeType);
+
+    // 批量保存图片URL
+    List<MediaFile> saveImageUrls(String conversationCode, String messageCode,
+                                   List<String> imageUrls);
+
+    // 为最新的用户消息保存图片URL（自动查找最新 USER 消息）
+    List<MediaFile> saveImageUrlsForLatestUserMessage(String conversationCode,
+                                                       List<String> imageUrls);
+}
+```
+
 ## ⚙️ 配置说明
 
 ### 数据源配置
