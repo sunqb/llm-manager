@@ -1,6 +1,5 @@
-package com.llmmanager.ops.formatter;
+package com.llmmanager.service.dto;
 
-import com.llmmanager.service.dto.ChatStreamChunk;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -81,3 +80,4 @@ public class StreamResponseFormatter {
                 .replace("\t", "\\t");
     }
 }
+

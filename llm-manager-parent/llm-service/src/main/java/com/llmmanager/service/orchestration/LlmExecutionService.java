@@ -156,15 +156,22 @@ public class LlmExecutionService {
     }
 
     /**
-     * 智能体同步对话（外部 API 兼容）
+     * 智能体同步对话（无会话历史）
      */
     public String chatWithAgent(Agent agent, String userMessage) {
+        return chatWithAgent(agent, userMessage, null);
+    }
+
+    /**
+     * 智能体同步对话（支持会话历史）
+     */
+    public String chatWithAgent(Agent agent, String userMessage, String conversationId) {
         LlmModel model = getModel(agent.getLlmModelId());
         Channel channel = getChannel(model);
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
 
         ChatRequest request = buildRequest(channel, model, userMessage, agent.getSystemPrompt(), temp);
-        return llmChatAgent.chat(request);
+        return llmChatAgent.chat(request, conversationId);
     }
 
     /**

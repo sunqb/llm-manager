@@ -4,7 +4,7 @@ import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.agent.message.MediaMessage;
 import com.llmmanager.agent.storage.core.service.MediaFileService;
 import com.llmmanager.ops.dto.StreamChatRequest;
-import com.llmmanager.ops.formatter.StreamResponseFormatter;
+import com.llmmanager.service.dto.StreamResponseFormatter;
 import com.llmmanager.service.core.entity.Agent;
 import com.llmmanager.service.core.service.AgentService;
 import com.llmmanager.service.dto.ChatStreamChunk;
