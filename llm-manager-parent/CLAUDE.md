@@ -1090,31 +1090,59 @@ public class ChatRequest {
 
 ---
 
-### 阶段 3：消息增强与多模态（Message Enhancement）🔲 待实现
+### 阶段 3：消息增强与多模态（Message Enhancement）✅ 已完成
 
 #### 目标
-- 支持多模态消息（图片、文件）
-- 扩展 Message 体系
-- 实现富文本消息
+- ✅ 支持多模态消息（图片、文件）
+- ✅ 扩展 Message 体系
+- ✅ 实现媒体文件存储
 
 #### 核心实现
 
-**1. 多模态消息**
+**1. MediaMessage 多模态消息**
 ```java
 public class MediaMessage extends Message {
-    private MediaType mediaType;  // IMAGE, FILE, AUDIO
-    private String mediaUrl;
-    private byte[] mediaData;
+    private List<MediaContent> mediaContents;  // 支持多个媒体
+
+    public static class MediaContent {
+        private MediaType mediaType;  // IMAGE, DOCUMENT, AUDIO, VIDEO
+        private String url;           // 媒体URL
+        private String base64Data;    // Base64编码数据
+        private String mimeType;      // MIME类型
+    }
 }
 ```
 
-**2. 工具消息**
+**2. MediaFile 媒体文件存储**
 ```java
-public class ToolMessage extends Message {
-    private String toolCallId;
-    private String toolName;
-    private String toolResult;
+@TableName("a_media_files")
+public class MediaFile {
+    private String fileCode;          // 文件唯一标识
+    private String conversationCode;  // 关联会话
+    private String messageCode;       // 关联消息
+    private String mediaType;         // IMAGE/DOCUMENT/AUDIO/VIDEO
+    private String fileUrl;           // 文件URL
+    private String mimeType;          // MIME类型
 }
+```
+
+**3. 多模态对话 API**
+- `POST /api/chat/{modelId}/with-image-url` - 图片URL对话（流式）
+- `POST /api/chat/{modelId}/with-media/sync` - 多模态同步对话
+- 统一流式接口支持 `mediaUrls` 参数
+
+**4. 包结构**
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── message/
+│   ├── MediaMessage.java        ✅ 多模态消息
+│   └── MessageConverter.java    ✅ 支持 Media 转换
+├── storage/core/
+│   ├── entity/MediaFile.java    ✅ 媒体文件实体
+│   ├── mapper/MediaFileMapper.java
+│   └── service/
+│       ├── MediaFileService.java
+│       └── impl/MediaFileServiceImpl.java
 ```
 
 ---
@@ -1645,9 +1673,9 @@ llm-agent/src/main/java/com/llmmanager/agent/
 
 1. ✅ **阶段 1**：Augmented LLM 基础抽象（已完成）
 2. ✅ **阶段 2**：工具调用层（已完成）
-3. 🎯 **阶段 5**：Super Agent with Spring AI Alibaba（**推荐优先实现**）
-4. 🔲 **阶段 3**：多模态支持（可选）
-5. 🔲 **阶段 4**：MCP + Vector Store（Spring AI Alibaba 已内置）
+3. ✅ **阶段 3**：消息增强与多模态（已完成）
+4. 🔲 **阶段 4**：MCP + Vector Store（Spring AI Alibaba 已内置）
+5. 🎯 **阶段 5**：Super Agent with Spring AI Alibaba（**推荐优先实现**）
 
 ### 总结
 
@@ -1658,4 +1686,4 @@ llm-agent/src/main/java/com/llmmanager/agent/
 - ✅ 开发效率提升 3 倍
 - ✅ 与 Spring 生态无缝集成
 
-阶段 3、4 可以根据实际需求选择性实现，因为 Spring AI Alibaba 已经内置了大部分功能。
+阶段 4 可以根据实际需求选择性实现，因为 Spring AI Alibaba 已经内置了大部分功能。

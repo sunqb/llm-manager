@@ -1372,7 +1372,61 @@ public class MyTools {
 
 ---
 
-### ⏳ Phase 3：MCP 和 Vector Store
+### ✅ Phase 3：消息增强与多模态（已完成）
+
+**目标**：支持多模态消息（图片、文件）
+
+#### 核心实现
+
+- [x] **MediaMessage 多模态消息**
+  - [x] `MediaMessage` - 支持图片、文件、音频、视频
+  - [x] `MediaContent` - 媒体内容封装（URL/Base64）
+  - [x] `MessageConverter` - 转换为 Spring AI Media 对象
+
+- [x] **MediaFile 媒体文件存储**
+  - [x] `MediaFile` 实体 - 映射 `a_media_files` 表
+  - [x] `MediaFileMapper` - MyBatis-Plus Mapper
+  - [x] `MediaFileService` - 媒体文件 CRUD 操作
+
+- [x] **多模态对话 API**
+  - [x] `POST /api/chat/{modelId}/with-image-url` - 图片URL对话（流式）
+  - [x] `POST /api/chat/{modelId}/with-media/sync` - 多模态同步对话
+  - [x] 统一流式对话接口支持 `mediaUrls` 参数
+
+- [x] **LlmExecutionService 集成**
+  - [x] `chatWithMedia()` - 多模态同步对话
+  - [x] `streamWithMedia()` - 多模态流式对话
+  - [x] 自动保存媒体URL到数据库
+
+**包结构**：
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── message/
+│   ├── MediaMessage.java        ✅ 多模态消息
+│   └── MessageConverter.java    ✅ 支持 Media 转换
+├── storage/core/
+│   ├── entity/MediaFile.java    ✅ 媒体文件实体
+│   ├── mapper/MediaFileMapper.java
+│   └── service/MediaFileService.java
+```
+
+**使用示例**：
+```java
+// 图片URL对话
+List<MediaMessage.MediaContent> mediaContents = List.of(
+    MediaMessage.MediaContent.ofImageUrl("https://example.com/image.jpg")
+);
+String response = executionService.chatWithMedia(modelId, "描述这张图片", mediaContents, conversationId);
+
+// 流式多模态对话
+Flux<ChatStreamChunk> stream = executionService.streamWithMedia(
+    modelId, "这张图片里有什么？", mediaContents, conversationId, null, null
+);
+```
+
+---
+
+### ⏳ Phase 4：MCP 和 Vector Store
 
 **目标**：支持 Model Context Protocol 和向量存储
 
@@ -1417,9 +1471,9 @@ Agent: "公司的退款政策是什么？"
 
 ---
 
-### ⏳ Phase 4：Agent Framework（Agent 框架）
+### ⏳ Phase 5：Agent Framework（Agent 框架）
 
-**目标**：实现 ReactAgent 模式和多 Agent 协作
+**目标**：实现 ReactAgent 模式和多 Agent 协作（推荐使用 Spring AI Alibaba）
 
 #### llm-agent 新增组件
 
