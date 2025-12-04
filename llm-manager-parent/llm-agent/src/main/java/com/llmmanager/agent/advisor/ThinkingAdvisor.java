@@ -110,7 +110,7 @@ public class ThinkingAdvisor implements BaseAdvisor {
                 .build();
 
         log.info("[ThinkingAdvisor] 已注入 thinking 参数到 extraBody");
-        logOpenAiOptions(newOptions);
+        // logOpenAiOptions(newOptions);
 
         return modifiedRequest;
     }

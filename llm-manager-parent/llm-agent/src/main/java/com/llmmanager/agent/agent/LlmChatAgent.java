@@ -135,13 +135,13 @@ public class LlmChatAgent {
      */
     public Flux<ChatResponse> stream(ChatRequest request, String conversationId) {
         // 打印完整的请求参数
-        logFullRequest(request, conversationId);
+        // logFullRequest(request, conversationId);
 
         ChatClient chatClient = createChatClient(request, conversationId);
         OpenAiChatOptions options = buildOptions(request);
 
         // 打印完整的 options
-        logFullOptions(options);
+        // logFullOptions(options);
 
         var promptBuilder = chatClient.prompt();
 

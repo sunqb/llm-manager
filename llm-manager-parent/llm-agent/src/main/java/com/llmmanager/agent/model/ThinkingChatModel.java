@@ -66,7 +66,7 @@ public class ThinkingChatModel implements ChatModel {
             ChatCompletionRequest modifiedRequest = injectThinkingParams(request, thinkingParams);
 
             // 打印最终请求
-            logFinalRequest(modifiedRequest);
+            // logFinalRequest(modifiedRequest);
 
             // 直接调用 OpenAiApi
             var response = openAiApi.chatCompletionEntity(modifiedRequest);
@@ -92,7 +92,7 @@ public class ThinkingChatModel implements ChatModel {
             ChatCompletionRequest request = invokeCreateRequest(prompt, true);
             ChatCompletionRequest modifiedRequest = injectThinkingParams(request, thinkingParams);
 
-            logFinalRequest(modifiedRequest);
+            // logFinalRequest(modifiedRequest);
 
             // 调用流式 API
             return openAiApi.chatCompletionStream(modifiedRequest)
