@@ -96,3 +96,10 @@ sa-token:
 # 服务端口
 server:
     port: 8080
+
+# 调试 HTTP 请求日志（查看发送给 LLM 的请求体）
+logging:
+  level:
+    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG
+    org.springframework.web.client.RestClient: DEBUG
+    reactor.netty.http.client: DEBUG

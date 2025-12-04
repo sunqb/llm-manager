@@ -32,7 +32,7 @@ const selectedModelId = ref(null)
 const selectedAgentSlug = ref(null)
 const useAgent = ref(false)
 const useTools = ref(false) // 是否启用工具调用
-const enableReasoning = ref(false) // 是否启用思考过程
+const thinkingMode = ref('disabled') // 思考模式：disabled | enabled | auto
 const showToolPanel = ref(false) // 是否显示工具选择面板
 const availableTools = ref({}) // 可用的工具列表 {name -> description}
 const selectedTools = ref([]) // 已选择的工具名称列表
@@ -181,112 +181,67 @@ const send = async () => {
     })
 
     try {
-        if (useAgent.value) {
-            // 使用智能体流式API（内部接口，支持会话历史）
-            await api.chatWithAgentStream(
-                selectedAgentSlug.value,
-                text,
-                conversationId.value,
-                (chunk) => {
-                    // 实时追加内容
-                    messages.value[assistantMsgIndex].content += chunk
-                },
-                () => {
-                    // 完成，保存消息到 localStorage
-                    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
-                    loading.value = false
-                },
-                (error) => {
-                    // 错误处理
-                    messages.value[assistantMsgIndex] = {
-                        role: 'error',
-                        content: '错误: ' + (error.message || '请求失败')
-                    }
-                    loading.value = false
-                }
-            )
-        } else if (imageUrls.length > 0) {
-            // 使用图片URL流式API（多模态）
-            await api.chatStreamWithImageUrl(
-                selectedModelId.value,
-                text,
-                imageUrls,
-                conversationId.value,
-                (chunk) => {
-                    messages.value[assistantMsgIndex].content += chunk
-                },
-                () => {
-                    localStorage.setItem('chatMessages', JSON.stringify(messages.value))
-                    loading.value = false
-                },
-                (error) => {
-                    messages.value[assistantMsgIndex] = {
-                        role: 'error',
-                        content: '错误: ' + (error.message || '请求失败')
-                    }
-                    loading.value = false
-                }
-            )
-        } else {
-            // 根据 useTools 状态选择不同的 API
-            if (useTools.value) {
-                // 使用工具调用流式API（传递选中的工具列表）
-                await api.chatStreamWithTools(
-                    selectedModelId.value,
-                    text,
-                    conversationId.value,
-                    selectedTools.value, // 传递选中的工具列表
-                    (chunk) => {
-                        messages.value[assistantMsgIndex].content += chunk
-                    },
-                    () => {
-                        localStorage.setItem('chatMessages', JSON.stringify(messages.value))
-                        loading.value = false
-                    },
-                    (error) => {
-                        messages.value[assistantMsgIndex] = {
-                            role: 'error',
-                            content: '错误: ' + (error.message || '请求失败')
-                        }
-                        loading.value = false
-                    }
-                )
-            } else {
-                // 使用普通流式API（支持思考模式）
-                await api.chatStream(
-                    selectedModelId.value,
-                    text,
-                    conversationId.value,
-                    (chunk) => {
-                        // 处理流式数据：可能是字符串（旧格式）或 {content, reasoning}（新格式）
-                        if (typeof chunk === 'string') {
-                            // 旧格式：直接追加到 content
-                            messages.value[assistantMsgIndex].content += chunk
-                        } else {
-                            // 新格式：分别追加 content 和 reasoning
-                            if (chunk.content) {
-                                messages.value[assistantMsgIndex].content += chunk.content
-                            }
-                            if (chunk.reasoning) {
-                                messages.value[assistantMsgIndex].reasoning += chunk.reasoning
-                            }
-                        }
-                    },
-                    () => {
-                        localStorage.setItem('chatMessages', JSON.stringify(messages.value))
-                        loading.value = false
-                    },
-                    (error) => {
-                        messages.value[assistantMsgIndex] = {
-                            role: 'error',
-                            content: '错误: ' + (error.message || '请求失败')
-                        }
-                        loading.value = false
-                    },
-                    enableReasoning.value // 传递思考模式开关
-                )
-            }
+        // 构建统一请求对象
+        const request = {
+            message: text,
+            conversationId: conversationId.value
         }
+
+        // 根据模式设置参数
+        if (useAgent.value) {
+            request.agentSlug = selectedAgentSlug.value
+        } else {
+            request.modelId = selectedModelId.value
+
+            // 多模态
+            if (imageUrls.length > 0) {
+                request.mediaUrls = imageUrls
+            }
+
+            // 工具调用
+            if (useTools.value) {
+                request.enableTools = true
+                request.toolNames = selectedTools.value
+            }
+
+            // 思考模式：直接传递 thinkingMode 值
+            // enabled: 强制开启深度思考
+            // disabled: 强制关闭深度思考
+            // auto: 模型自行判断
+            request.thinkingMode = thinkingMode.value
+        }
+
+        // 使用统一流式 API
+        await api.chatStream(
+            request,
+            (chunk) => {
+                // 处理流式数据：{content, reasoning} 格式
+                if (typeof chunk === 'string') {
+                    // 兼容旧格式
+                    messages.value[assistantMsgIndex].content += chunk
+                } else {
+                    if (chunk.content) {
+                        messages.value[assistantMsgIndex].content += chunk.content
+                    }
+                    if (chunk.reasoning) {
+                        messages.value[assistantMsgIndex].reasoning += chunk.reasoning
+                    }
+                }
+            },
+            () => {
+                // 完成，保存消息到 localStorage
+                localStorage.setItem('chatMessages', JSON.stringify(messages.value))
+                loading.value = false
+            },
+            (error) => {
+                // 错误处理
+                messages.value[assistantMsgIndex] = {
+                    role: 'error',
+                    content: '错误: ' + (error.message || '请求失败')
+                }
+                loading.value = false
+            }
+        )
     } catch (e) {
         messages.value[assistantMsgIndex] = {
             role: 'error',
@@ -341,11 +296,15 @@ onUnmounted(() => {
                     <input type="checkbox" v-model="useTools" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
                     <span class="text-sm text-slate-700">🔧 工具</span>
                 </label>
-                <!-- 思考模式开关 -->
-                <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用思考过程显示（适用于 o1 等思考模型）">
-                    <input type="checkbox" v-model="enableReasoning" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
-                    <span class="text-sm text-slate-700">🧠 思考</span>
-                </label>
+                <!-- 思考模式选择器 -->
+                <div class="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg" title="深度思考模式控制">
+                    <span class="text-sm text-slate-500">🧠</span>
+                    <select v-model="thinkingMode" class="text-sm text-slate-700 bg-transparent border-none outline-none cursor-pointer pr-1">
+                        <option value="disabled">关闭</option>
+                        <option value="auto">自动</option>
+                        <option value="enabled">开启</option>
+                    </select>
+                </div>
                 <!-- 图片URL输入开关 -->
                 <label class="flex items-center gap-2 cursor-pointer px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap" title="启用图片URL输入（多模态对话）">
                     <input type="checkbox" v-model="useImageUrl" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500" />
@@ -451,7 +410,7 @@ onUnmounted(() => {
                     <!-- AI 消息 - 有内容或思考时显示 -->
                     <div v-else-if="msg.role !== 'user'">
                         <!-- 思考过程（如果有或正在思考） -->
-                        <div v-if="msg.reasoning || (loading && !msg.content && enableReasoning)" class="border-b border-slate-100">
+                        <div v-if="msg.reasoning || (loading && !msg.content && thinkingMode !== 'disabled')" class="border-b border-slate-100">
                             <button
                                 @click.stop="toggleReasoning(idx)"
                                 class="w-full px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"

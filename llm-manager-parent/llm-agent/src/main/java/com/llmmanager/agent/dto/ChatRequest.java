@@ -9,7 +9,7 @@ import lombok.Data;
  * 支持更多参数透传，调用层可根据需要传参
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 public class ChatRequest {
 
     // ==================== Channel 配置 ====================
@@ -134,6 +134,54 @@ public class ChatRequest {
      * 用户标识（用于审计日志）
      */
     private String userId;
+
+    /**
+     * 思考模式值（深度思考控制）
+     *
+     * 可选值取决于 reasoningFormat：
+     * - DOUBAO 格式: enabled, disabled
+     * - OPENAI 格式: low, medium, high
+     * - auto: 不传递参数，让模型自行判断（默认）
+     */
+    private String thinkingMode;
+
+    /**
+     * Reasoning 参数格式（不同厂商使用不同的 API 格式）
+     *
+     * - DOUBAO: {"thinking": {"type": "enabled/disabled"}} - 豆包/火山引擎
+     * - OPENAI: {"reasoning_effort": "low/medium/high"} - OpenAI o1/o3 系列
+     * - DEEPSEEK: 无需额外参数，模型自动思考
+     * - AUTO: 根据模型名称自动推断格式（默认）
+     */
+    @Builder.Default
+    private ReasoningFormat reasoningFormat = ReasoningFormat.AUTO;
+
+    /**
+     * Reasoning 参数格式枚举
+     */
+    public enum ReasoningFormat {
+        /**
+         * 豆包/火山引擎格式
+         * 请求体: {"thinking": {"type": "enabled/disabled"}}
+         */
+        DOUBAO,
+
+        /**
+         * OpenAI o1/o3 系列格式
+         * 请求体: {"reasoning_effort": "low/medium/high"}
+         */
+        OPENAI,
+
+        /**
+         * DeepSeek R1 等模型，无需额外参数
+         */
+        DEEPSEEK,
+
+        /**
+         * 自动推断格式（根据模型名称）
+         */
+        AUTO
+    }
 
     // ==================== 辅助方法 ====================
 

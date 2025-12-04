@@ -67,117 +67,39 @@ export default {
       })
   },
 
-  // Chat - 流式
-  chatStream(modelId, message, conversationId, onChunk, onComplete, onError, enableReasoning = false) {
+  /**
+   * 统一流式对话接口
+   *
+   * 支持所有对话场景：
+   * - 基础对话：message + modelId
+   * - 智能体对话：message + agentSlug
+   * - 工具调用：enableTools=true + toolNames
+   * - 多模态：mediaUrls 传入图片URL
+   *
+   * @param {object} request 请求参数
+   * @param {string} request.message 用户消息（必填）
+   * @param {number} request.modelId 模型ID（与 agentSlug 二选一）
+   * @param {string} request.agentSlug 智能体标识（与 modelId 二选一）
+   * @param {string} request.conversationId 会话ID（可选）
+   * @param {boolean} request.enableTools 是否启用工具调用（默认 false）
+   * @param {string[]} request.toolNames 工具名称列表（可选）
+   * @param {string[]} request.mediaUrls 媒体 URL 列表（可选）
+   * @param {function} onChunk 每次接收到数据块的回调
+   * @param {function} onComplete 完成时的回调
+   * @param {function} onError 错误时的回调
+   */
+  chatStream(request, onChunk, onComplete, onError) {
     const token = localStorage.getItem('satoken')
 
-    // 根据 enableReasoning 选择不同的端点
-    const endpoint = enableReasoning ? 'stream-with-reasoning' : 'stream-flux'
-
-    // 如果有 conversationId，添加到 URL 查询参数
-    const url = conversationId
-      ? `http://localhost:8080/api/chat/${modelId}/${endpoint}?conversationId=${conversationId}`
-      : `http://localhost:8080/api/chat/${modelId}/${endpoint}`
-
     return streamFetch(
-      url,
+      'http://localhost:8080/api/chat/stream',
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'text/plain',
+          'Content-Type': 'application/json',
           'satoken': token || ''
         },
-        body: message
-      },
-      onChunk,
-      onComplete,
-      onError
-    )
-  },
-
-  chatWithAgentStream(slug, message, conversationId, onChunk, onComplete, onError) {
-    const token = localStorage.getItem('satoken')
-
-    // 如果有 conversationId，添加到 URL 查询参数（支持会话历史）
-    const url = conversationId
-      ? `http://localhost:8080/api/chat/agents/${slug}/stream?conversationId=${conversationId}`
-      : `http://localhost:8080/api/chat/agents/${slug}/stream`
-
-    return streamFetch(
-      url,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-          'satoken': token || ''
-        },
-        body: message
-      },
-      onChunk,
-      onComplete,
-      onError
-    )
-  },
-
-  // Chat - 流式（带工具调用）
-  chatStreamWithTools(modelId, message, conversationId, toolNames, onChunk, onComplete, onError) {
-    const token = localStorage.getItem('satoken')
-
-    // 构建 URL 查询参数
-    const params = new URLSearchParams()
-    if (conversationId) {
-      params.append('conversationId', conversationId)
-    }
-    // 支持传递 toolNames 数组
-    if (toolNames && toolNames.length > 0) {
-      toolNames.forEach(name => params.append('toolNames', name))
-    }
-
-    const queryString = params.toString()
-    const url = queryString
-      ? `http://localhost:8080/api/chat/${modelId}/with-tools/stream?${queryString}`
-      : `http://localhost:8080/api/chat/${modelId}/with-tools/stream`
-
-    return streamFetch(
-      url,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-          'satoken': token || ''
-        },
-        body: message
-      },
-      onChunk,
-      onComplete,
-      onError
-    )
-  },
-
-  // Chat - 流式（带图片 URL，多模态）
-  chatStreamWithImageUrl(modelId, message, imageUrls, conversationId, onChunk, onComplete, onError) {
-    const token = localStorage.getItem('satoken')
-
-    // 构建 URL 查询参数
-    const params = new URLSearchParams()
-    params.append('message', message)
-    if (conversationId) {
-      params.append('conversationId', conversationId)
-    }
-    // 支持传递 imageUrls 数组
-    if (imageUrls && imageUrls.length > 0) {
-      imageUrls.forEach(url => params.append('imageUrls', url))
-    }
-
-    const url = `http://localhost:8080/api/chat/${modelId}/with-image-url?${params.toString()}`
-
-    return streamFetch(
-      url,
-      {
-        method: 'POST',
-        headers: {
-          'satoken': token || ''
-        }
+        body: JSON.stringify(request)
       },
       onChunk,
       onComplete,
