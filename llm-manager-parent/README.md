@@ -691,6 +691,253 @@ function continueConversation() {
 - Spring AI 1.1+ 将该字段映射到 `AssistantMessage.getMetadata().get("reasoningContent")`
 - 前端可以分开展示思考过程和最终答案
 
+### 🔧 技术亮点：突破 Spring AI 的 Thinking 参数限制
+
+#### 问题背景
+
+豆包/火山引擎等国内模型需要在请求体**根层级**传递 `thinking` 参数：
+
+```json
+{
+  "model": "doubao-xxx",
+  "temperature": 0.7,
+  "thinking": {"type": "enabled"}  // ✅ 必须在根层级
+}
+```
+
+但 Spring AI 的 `OpenAiChatOptions.extraBody` 会被序列化为 `extra_body` 嵌套字段，导致参数无法正确传递：
+
+```json
+{
+  "model": "doubao-xxx",
+  "extra_body": {"thinking": {"type": "enabled"}}  // ❌ 错误！被嵌套了
+}
+```
+
+#### 问题根源
+
+Spring AI 的 `OpenAiChatModel.createRequest()` 调用 `ModelOptionsUtils.merge()` 时，只保留目标类 `ChatCompletionRequest` 中带 `@JsonProperty` 注解的字段。但 `ChatCompletionRequest.extraBody` **没有** `@JsonProperty` 注解，导致 `extra_body` 在合并时被丢弃！
+
+```java
+// Spring AI 源码问题所在
+OpenAiChatOptions requestOptions = (OpenAiChatOptions) prompt.getOptions();
+request = ModelOptionsUtils.merge(requestOptions, request, ChatCompletionRequest.class);
+// ↑ extra_body 在这里被过滤掉了
+```
+
+#### 解决方案：ThinkingChatModel 包装器
+
+我们创建了 `ThinkingChatModel` 包装器，通过**反射**绕过 Spring AI 的限制：
+
+```
+┌─────────────────────┐
+│  ThinkingAdvisor    │  ← 将 thinking 放入 OpenAiChatOptions.extraBody
+│ (设置 extraBody)    │
+└─────────┬───────────┘
+          ↓
+┌─────────────────────┐
+│ ThinkingChatModel   │  ← 核心！反射调用 createRequest 后手动注入 thinking
+│   (反射注入)        │
+└─────────┬───────────┘
+          ↓
+┌─────────────────────┐
+│    OpenAiApi        │  ← 发送 HTTP 请求
+│                     │     ChatCompletionRequest.extraBody() 方法有 @JsonAnyGetter
+│                     │     Jackson 序列化时自动打平 extraBody 到 JSON 根层级
+└─────────────────────┘
+```
+
+**核心代码**：
+
+```java
+// ThinkingChatModel.java - 关键逻辑
+public class ThinkingChatModel implements ChatModel {
+
+    @Override
+    public ChatResponse call(Prompt prompt) {
+        Map<String, Object> thinkingParams = extractThinkingParams(prompt);
+        if (thinkingParams == null || thinkingParams.isEmpty()) {
+            return delegate.call(prompt);  // 无 thinking，直接委托
+        }
+
+        // 有 thinking 参数，需要手动处理
+        ChatCompletionRequest request = invokeCreateRequest(prompt, false);  // 反射调用
+        ChatCompletionRequest modifiedRequest = injectThinkingParams(request, thinkingParams);
+        return openAiApi.chatCompletionEntity(modifiedRequest);  // 直接调用 API
+    }
+
+    // 注入 thinking 参数到 ChatCompletionRequest.extraBody
+    private ChatCompletionRequest injectThinkingParams(
+            ChatCompletionRequest request, Map<String, Object> thinkingParams) {
+        Map<String, Object> extraBody = request.extraBody();  // mutable HashMap
+        extraBody.putAll(thinkingParams);  // 直接注入
+        return request;
+    }
+}
+```
+
+**最终效果**：
+
+```json
+{
+  "model": "doubao-xxx",
+  "temperature": 0.7,
+  "messages": [...],
+  "thinking": {"type": "enabled"}  // ✅ 正确出现在根层级！
+}
+```
+
+**关键机制：`@JsonAnyGetter` 的作用**
+
+Spring AI 的 `ChatCompletionRequest` 是一个 record，其 `extraBody()` getter 方法带有 `@JsonAnyGetter` 注解：
+
+```java
+// Spring AI 源码：org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest
+public record ChatCompletionRequest(
+    @JsonProperty("model") String model,
+    @JsonProperty("temperature") Double temperature,
+    // ... 其他字段
+    Map<String, Object> extraBody  // ← 字段本身无注解
+) {
+    /**
+     * Overrides the default accessor to add @JsonAnyGetter annotation.
+     * This causes Jackson to flatten the extraBody map contents to the top level of the JSON.
+     */
+    @JsonAnyGetter  // ← getter 方法上的注解
+    public Map<String, Object> extraBody() {
+        return this.extraBody;
+    }
+}
+```
+
+**Jackson 序列化流程**：
+1. 遍历 `ChatCompletionRequest` 的所有字段和方法
+2. 发现 `extraBody()` 方法有 `@JsonAnyGetter` 注解
+3. 调用该方法获取 Map
+4. **将 Map 的内容打平到 JSON 根层级**，而不是嵌套在 `extra_body` 字段中
+
+这就是为什么我们可以通过修改 `request.extraBody()` 来将 `thinking` 参数注入到 JSON 根层级的原因。
+
+#### 核心机制总结
+
+**两个组件的真实分工**：
+
+| 组件 | 职责 | 核心代码 |
+|------|------|---------|
+| **ThinkingAdvisor** | 数据转换器：将业务参数 `thinkingMode` 转换为 Spring AI 的 `extraBody` 格式 | `buildOpenAiOptionsWithExtraBody()` |
+| **ThinkingChatModel** | 绕过拦截器：在 merge 丢失 extraBody 后手动注入回去 | `injectThinkingParams()` |
+
+**Spring AI extraBody 丢失的位置**：
+
+```java
+// OpenAiChatModel.java:185-187
+public ChatResponse internalCall(Prompt prompt, ...) {
+    ChatCompletionRequest request = createRequest(prompt, false);
+    // ↑ extraBody 在这里被丢弃
+}
+
+// OpenAiChatModel.java:630-631
+ChatCompletionRequest createRequest(Prompt prompt, boolean stream) {
+    OpenAiChatOptions requestOptions = (OpenAiChatOptions) prompt.getOptions();
+    request = ModelOptionsUtils.merge(requestOptions, request, ChatCompletionRequest.class);
+    //                                                          ↑
+    //                           问题根源：只复制带 @JsonProperty 的字段
+    //                           extraBody 字段无注解，被过滤掉
+}
+```
+
+**我们的绕过方案**：
+
+```java
+// ThinkingChatModel.java:52-72
+@Override
+public ChatResponse call(Prompt prompt) {
+    // 步骤 1：提前提取 thinking（在 merge 之前）
+    Map<String, Object> thinkingParams = extractThinkingParams(prompt);
+
+    // 步骤 2：允许 Spring AI 正常 merge（extraBody 会丢失，但我们已经提取了）
+    ChatCompletionRequest request = invokeCreateRequest(prompt, false);
+
+    // 步骤 3：手动注入 thinking 到 extraBody（恢复！）
+    ChatCompletionRequest modifiedRequest = injectThinkingParams(request, thinkingParams);
+
+    // 步骤 4：直接调用 API（绕过 Spring AI 的 call()）
+    return openAiApi.chatCompletionEntity(modifiedRequest);
+}
+```
+
+**完整数据流**：
+
+```
+Controller 传入 thinkingMode
+    ↓
+LlmChatAgent 设置 Advisor 参数
+    ↓
+ThinkingAdvisor.before() - 转换为 extraBody
+    ↓ (Spring AI 的 Prompt.options.extraBody)
+ThinkingChatModel.call()
+    ├─ extractThinkingParams() → 提取 extraBody
+    ├─ createRequest() → merge 丢弃 extraBody ❌
+    ├─ injectThinkingParams() → 手动恢复 extraBody ✅
+    └─ openAiApi → @JsonAnyGetter 打平到 JSON 根层级
+```
+
+**关键点**：
+1. **ThinkingAdvisor** 只做一件事：格式转换（`thinkingMode` → `extraBody`）
+2. **ThinkingChatModel** 才是核心：在 merge 丢失后手动恢复 extraBody
+3. Spring AI 的 `call()` → `createRequest()` → `merge()` 是 extraBody 丢失的真正位置
+4. 我们重写 `call()` 方法，在 merge 前提取、merge 后恢复
+
+#### 文件结构
+
+| 文件 | 作用 |
+|------|------|
+| `ThinkingAdvisor.java` | 从 Advisor 上下文读取 thinking 参数，设置到 `OpenAiChatOptions.extraBody` |
+| `ThinkingChatModel.java` | **核心**：包装 `OpenAiChatModel`，通过反射注入 thinking 到 `ChatCompletionRequest.extraBody` |
+| `LlmChatAgent.java` | 使用 `ThinkingChatModel` 包装 `OpenAiChatModel` |
+
+#### 支持的格式
+
+| 格式 | 适用模型 | 参数示例 |
+|------|---------|---------|
+| DOUBAO | 豆包/火山引擎 | `{"thinking": {"type": "enabled"}}` |
+| OPENAI | o1/o3 系列 | `{"reasoning_effort": "medium"}` |
+| DEEPSEEK | DeepSeek R1 | 无需额外参数，自动启用 |
+
+#### Advisor 管理策略
+
+LLM Manager 对 Advisor 采用分层管理策略，兼顾灵活性和性能：
+
+**设计原则**：
+- **全局 Advisor**（如 LoggingAdvisor）：通过 `AdvisorManager` 统一注册，所有请求生效
+- **条件 Advisor**（如 MemoryAdvisor、ThinkingAdvisor）：按需添加，仅在满足条件时生效
+
+**条件 Advisor 示例**：
+
+| Advisor | 触发条件 | 设计理由 |
+|---------|---------|---------|
+| **MemoryAdvisor** | `conversationId != null` | 无 conversationId 时不查询数据库，避免性能损耗 |
+| **ThinkingAdvisor** | `thinkingMode != null && !auto` | 只有需要思考模式时才注入 thinking 参数 |
+
+**为什么不统一到 AdvisorManager？**
+
+1. **条件是请求级别的**：无法在全局注册时判断（conversationId、thinkingMode 都是运行时参数）
+2. **性能优化**：按需添加避免不必要的数据库查询和参数处理
+3. **保持简单**：AdvisorManager 不需要耦合业务参数，职责单一
+
+**Advisor 执行顺序**（按 `order` 从小到大）：
+```
+MemoryAdvisor (order=0) → 加载历史消息
+      ↓
+ThinkingAdvisor (order=100) → 注入 thinking 参数
+      ↓
+其他 Advisor (order > 100)
+```
+
+**代码位置**：
+- 全局 Advisor 注册：`LlmChatAgent.createChatClient(ChatModel)`
+- 条件 Advisor 添加：`LlmChatAgent.createChatClient(ChatRequest, String)`
+
 ### API 端点
 
 ```bash

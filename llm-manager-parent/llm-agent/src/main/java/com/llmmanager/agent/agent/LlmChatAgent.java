@@ -1,9 +1,11 @@
 package com.llmmanager.agent.agent;
 
 import com.llmmanager.agent.advisor.AdvisorManager;
+import com.llmmanager.agent.advisor.ThinkingAdvisor;
 import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.agent.dto.ChatRequest;
 import com.llmmanager.agent.message.MediaMessage;
+import com.llmmanager.agent.model.ThinkingChatModel;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -15,17 +17,12 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.client.BufferingClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClient;
 import reactor.core.publisher.Flux;
 import lombok.extern.slf4j.Slf4j;
-
-import com.llmmanager.agent.interceptor.ExtraBodyFlattenInterceptor;
 
 import javax.annotation.Resource;
 import java.net.URI;
@@ -60,6 +57,9 @@ public class LlmChatAgent {
     @Resource
     private ToolFunctionManager toolFunctionManager;
 
+    @Autowired(required = false)
+    private ThinkingAdvisor thinkingAdvisor;
+
     // 缓存 ChatModel 实例
     private static final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
 
@@ -92,13 +92,16 @@ public class LlmChatAgent {
         // 工具调用
         addTools(promptBuilder, request);
 
-        // 执行
+        // 执行（传递 Advisor 参数）
         ChatResponse response = promptBuilder
                 .options(options)
                 .advisors(advisor -> {
+                    // Memory Advisor 参数
                     if (conversationId != null) {
                         advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
                     }
+                    // Thinking Advisor 参数
+                    addThinkingAdvisorParams(advisor, request);
                 })
                 .call()
                 .chatResponse();
@@ -128,7 +131,7 @@ public class LlmChatAgent {
      * - 基础对话
      * - 工具调用（request.enableTools = true）
      * - 多模态（request.mediaContents）
-     * - 思考模式（自动支持，通过 metadata 返回 reasoning_content）
+     * - 思考模式（通过 ThinkingAdvisor 处理，自动将 thinking 参数注入到顶层）
      */
     public Flux<ChatResponse> stream(ChatRequest request, String conversationId) {
         // 打印完整的请求参数
@@ -137,7 +140,7 @@ public class LlmChatAgent {
         ChatClient chatClient = createChatClient(request, conversationId);
         OpenAiChatOptions options = buildOptions(request);
 
-        // 打印完整的 options（包括 extraBody）
+        // 打印完整的 options
         logFullOptions(options);
 
         var promptBuilder = chatClient.prompt();
@@ -153,13 +156,16 @@ public class LlmChatAgent {
         // 工具调用
         addTools(promptBuilder, request);
 
-        // 执行流式请求
+        // 执行流式请求（传递 Advisor 参数）
         return promptBuilder
                 .options(options)
                 .advisors(advisor -> {
+                    // Memory Advisor 参数
                     if (conversationId != null) {
                         advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
                     }
+                    // Thinking Advisor 参数
+                    addThinkingAdvisorParams(advisor, request);
                 })
                 .stream()
                 .chatResponse();
@@ -212,10 +218,13 @@ public class LlmChatAgent {
 
     /**
      * 构建 OpenAI 选项
+     *
+     * 注意：thinking 参数由 ThinkingAdvisor 处理，不再在这里设置 extraBody。
+     * ThinkingAdvisor 会将 thinking 直接注入到 ChatOptions 的顶层。
      */
     private OpenAiChatOptions buildOptions(ChatRequest request) {
-        log.info("[LlmChatAgent] buildOptions - thinkingMode: '{}', reasoningFormat: {}",
-                request.getThinkingMode(), request.getReasoningFormat());
+        log.debug("[LlmChatAgent] buildOptions - model: {}, temperature: {}",
+                request.getModelIdentifier(), request.getTemperature());
 
         OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder()
                 .model(request.getModelIdentifier());
@@ -236,108 +245,9 @@ public class LlmChatAgent {
             builder.presencePenalty(request.getPresencePenalty());
         }
 
-        // 思考模式：根据不同厂商格式构建 extraBody
-        Map<String, Object> extraBody = buildReasoningExtraBody(request);
-        if (extraBody != null && !extraBody.isEmpty()) {
-            builder.extraBody(extraBody);
-            log.info("[LlmChatAgent] 已设置 reasoning extraBody: {}", extraBody);
-        }
+        // thinking 参数由 ThinkingAdvisor 处理，不再设置 extraBody
 
-        OpenAiChatOptions options = builder.build();
-
-        // 调试日志：打印完整的 options JSON
-        if (log.isDebugEnabled() && options.getExtraBody() != null && !options.getExtraBody().isEmpty()) {
-            try {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                String optionsJson = mapper.writeValueAsString(options);
-                log.debug("[LlmChatAgent] OpenAiChatOptions JSON: {}",
-                        optionsJson.length() > 1000 ? optionsJson.substring(0, 1000) + "..." : optionsJson);
-            } catch (Exception e) {
-                log.warn("[LlmChatAgent] JSON 序列化预览失败: {}", e.getMessage());
-            }
-        }
-
-        return options;
-    }
-
-    /**
-     * 根据厂商格式构建 reasoning extraBody
-     *
-     * @param request 聊天请求
-     * @return extraBody Map，如果不需要则返回 null
-     */
-    private Map<String, Object> buildReasoningExtraBody(ChatRequest request) {
-        String thinkingMode = request.getThinkingMode();
-
-        // 如果没有设置 thinkingMode 或者是 auto，不传递参数
-        if (!StringUtils.hasText(thinkingMode) || "auto".equalsIgnoreCase(thinkingMode)) {
-            return null;
-        }
-
-        // 确定实际使用的格式
-        ChatRequest.ReasoningFormat format = resolveReasoningFormat(request);
-        log.info("[LlmChatAgent] Reasoning 格式: {}, 值: {}", format, thinkingMode);
-
-        return switch (format) {
-            case DOUBAO -> {
-                // 豆包格式: {"thinking": {"type": "enabled/disabled"}}
-                Map<String, Object> thinkingConfig = Map.of("type", thinkingMode);
-                yield Map.of("thinking", thinkingConfig);
-            }
-            case OPENAI -> {
-                // OpenAI 格式: {"reasoning_effort": "low/medium/high"}
-                yield Map.of("reasoning_effort", thinkingMode);
-            }
-            case DEEPSEEK -> {
-                // DeepSeek 不需要额外参数
-                yield null;
-            }
-            case AUTO -> {
-                // AUTO 模式下根据模型名推断（这里不应该到达，因为已在 resolveReasoningFormat 处理）
-                log.warn("[LlmChatAgent] AUTO 格式未能解析，使用豆包格式作为默认");
-                Map<String, Object> defaultConfig = Map.of("type", thinkingMode);
-                yield Map.of("thinking", defaultConfig);
-            }
-        };
-    }
-
-    /**
-     * 解析实际使用的 Reasoning 格式
-     * 如果是 AUTO，则根据模型名称自动推断
-     */
-    private ChatRequest.ReasoningFormat resolveReasoningFormat(ChatRequest request) {
-        ChatRequest.ReasoningFormat format = request.getReasoningFormat();
-
-        // 如果不是 AUTO，直接返回
-        if (format != null && format != ChatRequest.ReasoningFormat.AUTO) {
-            return format;
-        }
-
-        // AUTO 模式：根据模型名称推断
-        String model = request.getModelIdentifier();
-        if (model == null) {
-            return ChatRequest.ReasoningFormat.DOUBAO; // 默认使用豆包格式
-        }
-
-        String modelLower = model.toLowerCase();
-
-        // OpenAI o1/o3 系列
-        if (modelLower.contains("o1") || modelLower.contains("o3") || modelLower.contains("o4") || modelLower.contains("gpt")) {
-            return ChatRequest.ReasoningFormat.OPENAI;
-        }
-
-        // DeepSeek R1 系列
-        if (modelLower.contains("deepseek") && modelLower.contains("r1")) {
-            return ChatRequest.ReasoningFormat.DEEPSEEK;
-        }
-
-        // 豆包/Doubao 系列
-        if (modelLower.contains("doubao") || modelLower.contains("seed")) {
-            return ChatRequest.ReasoningFormat.DOUBAO;
-        }
-
-        // 默认使用豆包格式（兼容更多国内模型）
-        return ChatRequest.ReasoningFormat.DOUBAO;
+        return builder.build();
     }
 
     /**
@@ -376,15 +286,66 @@ public class LlmChatAgent {
     }
 
     /**
+     * 添加 ThinkingAdvisor 参数到上下文
+     *
+     * 通过 Advisor context 传递 thinking 参数，ThinkingAdvisor 会：
+     * 1. 读取这些参数
+     * 2. 构建 ThinkingChatOptions
+     * 3. 替换原有的 ChatOptions
+     */
+    private void addThinkingAdvisorParams(ChatClient.AdvisorSpec advisor, ChatRequest request) {
+        String thinkingMode = request.getThinkingMode();
+        if (StringUtils.hasText(thinkingMode) && !"auto".equalsIgnoreCase(thinkingMode)) {
+            advisor.param(ThinkingAdvisor.THINKING_MODE, thinkingMode);
+            log.debug("[LlmChatAgent] 传递 thinking_mode 到 Advisor: {}", thinkingMode);
+
+            // 传递 reasoningFormat（如果有）
+            if (request.getReasoningFormat() != null) {
+                advisor.param(ThinkingAdvisor.REASONING_FORMAT, request.getReasoningFormat().name());
+                log.debug("[LlmChatAgent] 传递 reasoning_format 到 Advisor: {}", request.getReasoningFormat());
+            }
+        }
+    }
+
+    /**
      * 创建 ChatClient（内部使用）
+     *
+     * Advisor 管理策略：
+     * - 全局 Advisor（如 LoggingAdvisor）：通过 AdvisorManager 注册（见 createChatClient(ChatModel)）
+     * - 条件 Advisor（如 MemoryAdvisor、ThinkingAdvisor）：按需添加（本方法）
+     *   - MemoryAdvisor：需要 conversationId 时才添加
+     *   - ThinkingAdvisor：需要 thinkingMode 时才添加
+     *
+     * 设计理由：
+     * - 条件 Advisor 的触发条件是请求级别的，无法在全局注册时判断
+     * - 按需添加避免不必要的性能开销（如无 conversationId 时不查询数据库）
+     * - 保持 AdvisorManager 简单，不耦合业务参数
+     *
+     * Advisor 执行顺序（按 order 从小到大）：
+     * 1. MemoryAdvisor (order=0) - 处理历史消息
+     * 2. ThinkingAdvisor (order=100) - 注入 thinking 参数到 ChatOptions
      */
     private ChatClient createChatClient(ChatRequest request, String conversationId) {
         ChatModel chatModel = getOrCreateChatModel(request);
         ChatClient.Builder builder = ChatClient.builder(chatModel);
 
-        // 按需添加 MemoryAdvisor
+        // 收集需要的 Advisor
+        List<Advisor> advisors = new ArrayList<>();
+
+        // 1. MemoryAdvisor（需要 conversationId）
         if (conversationId != null && memoryAdvisor != null) {
-            builder.defaultAdvisors(memoryAdvisor);
+            advisors.add(memoryAdvisor);
+        }
+
+        // 2. ThinkingAdvisor（需要 thinkingMode）
+        if (thinkingAdvisor != null && StringUtils.hasText(request.getThinkingMode())
+                && !"auto".equalsIgnoreCase(request.getThinkingMode())) {
+            advisors.add(thinkingAdvisor);
+            log.info("[LlmChatAgent] 启用 ThinkingAdvisor, thinkingMode: {}", request.getThinkingMode());
+        }
+
+        if (!advisors.isEmpty()) {
+            builder.defaultAdvisors(advisors.toArray(new Advisor[0]));
         }
 
         return builder.build();
@@ -392,6 +353,10 @@ public class LlmChatAgent {
 
     /**
      * 获取或创建 ChatModel（带缓存）
+     *
+     * 使用 ThinkingChatModel 包装 OpenAiChatModel，以支持 thinking 参数注入。
+     * Spring AI 的 ModelOptionsUtils.merge() 会丢弃 extraBody，
+     * ThinkingChatModel 通过反射在 createRequest 后手动注入 thinking 参数。
      */
     private ChatModel getOrCreateChatModel(ChatRequest request) {
         String cacheKey = buildCacheKey(request);
@@ -402,9 +367,12 @@ public class LlmChatAgent {
                     .apiKey(request.getApiKey())
                     .build();
 
-            return OpenAiChatModel.builder()
+            OpenAiChatModel baseModel = OpenAiChatModel.builder()
                     .openAiApi(openAiApi)
                     .build();
+
+            // 使用 ThinkingChatModel 包装，支持 thinking 参数注入
+            return new ThinkingChatModel(baseModel);
         });
     }
 
