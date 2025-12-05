@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Go module cache (if using wasm-pack or similar tools)
+pkg/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
