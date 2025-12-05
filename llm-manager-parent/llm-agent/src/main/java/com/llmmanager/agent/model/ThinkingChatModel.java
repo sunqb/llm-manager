@@ -44,7 +44,15 @@ public class ThinkingChatModel implements ChatModel {
 
     public ThinkingChatModel(OpenAiChatModel delegate) {
         this.delegate = delegate;
+
+        // 通过反射获取 OpenAiChatModel 内部的 private 字段 openAiApi
+        // 原因：需要直接调用 OpenAiApi.chatCompletionEntity() 来发送 HTTP 请求
+        // 因为 OpenAiChatModel 的字段是私有的，只能通过反射访问
         this.openAiApi = extractOpenAiApi(delegate);
+
+        // 通过反射获取 OpenAiChatModel 内部的 private 方法 createRequest(Prompt, boolean)
+        // 原因：需要复用 OpenAiChatModel 的请求构建逻辑（将 Prompt 转换为 ChatCompletionRequest）
+        // 因为 createRequest 是私有方法，只能通过反射调用
         this.createRequestMethod = getCreateRequestMethod();
     }
 
@@ -138,12 +146,26 @@ public class ThinkingChatModel implements ChatModel {
     }
 
     /**
-     * 通过反射调用 createRequest
+     * 通过反射调用 createRequest 方法
+     *
+     * 反射调用步骤：
+     * 1. 使用之前获取并保存的 Method 对象（createRequestMethod）
+     * 2. 调用 method.invoke(delegate, prompt, stream)
+     *    - 第一个参数：要在哪个对象上调用方法（delegate 是 OpenAiChatModel 实例）
+     *    - 后续参数：传递给方法的实参（prompt, stream）
+     * 3. 返回值是 Object 类型，需要强制转换为 ChatCompletionRequest
+     *
+     * 等价于：
+     * <pre>
+     * ChatCompletionRequest request = delegate.createRequest(prompt, stream);
+     * </pre>
+     * 但由于 createRequest 是私有方法，必须通过反射调用
      */
     private ChatCompletionRequest invokeCreateRequest(Prompt prompt, boolean stream) throws Exception {
         if (createRequestMethod == null) {
             throw new IllegalStateException("createRequest 方法不可用");
         }
+        // 通过反射调用：delegate.createRequest(prompt, stream)
         return (ChatCompletionRequest) createRequestMethod.invoke(delegate, prompt, stream);
     }
 
@@ -230,12 +252,31 @@ public class ThinkingChatModel implements ChatModel {
     }
 
     /**
-     * 通过反射提取 OpenAiApi
+     * 通过反射提取 OpenAiApi 实例
+     *
+     * OpenAiChatModel 内部结构：
+     * <pre>
+     * public class OpenAiChatModel implements ChatModel {
+     *     private final OpenAiApi openAiApi;  // ← 私有字段，需要通过反射访问
+     *     ...
+     * }
+     * </pre>
+     *
+     * 反射步骤：
+     * 1. 通过 Class.getDeclaredField("openAiApi") 获取私有字段
+     * 2. 调用 field.setAccessible(true) 打破私有访问限制
+     * 3. 调用 field.get(model) 从 model 实例中读取字段值
+     * 4. 强制类型转换为 OpenAiApi
      */
     private OpenAiApi extractOpenAiApi(OpenAiChatModel model) {
         try {
+            // 步骤1：获取 OpenAiChatModel 类的私有字段 "openAiApi"
             Field field = OpenAiChatModel.class.getDeclaredField("openAiApi");
+
+            // 步骤2：打破 Java 访问控制，允许访问私有字段
             field.setAccessible(true);
+
+            // 步骤3：从 model 实例中读取该字段的值，并强制转换为 OpenAiApi 类型
             return (OpenAiApi) field.get(model);
         } catch (Exception e) {
             log.error("[ThinkingChatModel] 无法提取 OpenAiApi: {}", e.getMessage());
@@ -245,11 +286,39 @@ public class ThinkingChatModel implements ChatModel {
 
     /**
      * 获取 createRequest 方法（通过反射）
+     *
+     * OpenAiChatModel 内部结构：
+     * <pre>
+     * public class OpenAiChatModel implements ChatModel {
+     *     // 私有方法，负责将 Prompt 转换为 ChatCompletionRequest
+     *     private ChatCompletionRequest createRequest(Prompt prompt, boolean stream) {
+     *         // 复杂的转换逻辑...
+     *     }
+     * }
+     * </pre>
+     *
+     * 反射步骤：
+     * 1. 通过 Class.getDeclaredMethod("createRequest", Prompt.class, boolean.class) 获取私有方法
+     *    - 第一个参数：方法名 "createRequest"
+     *    - 后续参数：方法的参数类型列表 (Prompt.class, boolean.class)
+     * 2. 调用 method.setAccessible(true) 打破私有访问限制
+     * 3. 后续可通过 method.invoke(delegate, prompt, stream) 调用该方法
+     *
+     * 为什么需要反射调用：
+     * - createRequest 是 OpenAiChatModel 的核心转换逻辑，包含了复杂的 options 合并、消息转换等
+     * - 我们需要复用这个逻辑，但该方法是私有的，无法直接调用
+     * - 通过反射调用后，可以获取标准的 ChatCompletionRequest 对象
+     * - 然后手动向 ChatCompletionRequest.extraBody 注入 thinking 参数
      */
     private Method getCreateRequestMethod() {
         try {
+            // 步骤1：获取 OpenAiChatModel 类的私有方法 "createRequest"
+            // 参数签名：createRequest(Prompt prompt, boolean stream)
             Method method = OpenAiChatModel.class.getDeclaredMethod("createRequest", Prompt.class, boolean.class);
+
+            // 步骤2：打破 Java 访问控制，允许调用私有方法
             method.setAccessible(true);
+
             return method;
         } catch (Exception e) {
             log.error("[ThinkingChatModel] 无法获取 createRequest 方法: {}", e.getMessage());
