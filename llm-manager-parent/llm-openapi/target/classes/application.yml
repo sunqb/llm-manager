@@ -3,11 +3,11 @@ spring:
     allow-bean-definition-overriding: true
   application:
     name: llm-manager
-	  datasource:
-	    url: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=true&requireSSL=true&verifyServerCertificate=false&serverTimezone=Asia/Shanghai
-	    driver-class-name: com.mysql.cj.jdbc.Driver
-	    username: ""
-	    password: ""
+  datasource:
+    url: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=true&requireSSL=true&verifyServerCertificate=false&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: "NUPhAVaoZgc5LRA.root"
+    password: "8yoXrt8lI7dfCvCN"
     druid:
       # 初始化连接数
       initial-size: 5
@@ -55,10 +55,6 @@ spring:
         allow:
         # IP黑名单（存在共同时，deny优先于allow）
         deny:
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:schema.sql
   ai:
     openai:
       api-key: ${OPENAI_API_KEY:sk-placeholder}
@@ -74,6 +70,8 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+      # 字段更新策略：NOT_NULL = null 值字段不参与更新
+      update-strategy: not_null
   mapper-locations: classpath*:/mapper/**/*.xml
   type-aliases-package: com.llmops.service.core.entity
 
@@ -94,3 +92,7 @@ sa-token:
   is-read-cookie: false
   # 是否从head中读取token
   is-read-head: true
+
+# 服务端口
+server:
+  port: 8081

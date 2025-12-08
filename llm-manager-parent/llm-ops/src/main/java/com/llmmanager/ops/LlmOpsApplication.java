@@ -12,7 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 })
 @MapperScan({
         "com.llmmanager.service.core.mapper",
-        "com.llmmanager.agent.storage.core.mapper"  // ✅ 修正：加上 .core
+        "com.llmmanager.agent.storage.core.mapper"
 })
 public class LlmOpsApplication {
 

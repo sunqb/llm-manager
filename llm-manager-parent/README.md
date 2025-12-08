@@ -254,9 +254,9 @@ erDiagram
 - ✅ **ChatMemory 管理**：对话历史持久化到 MySQL
 - ✅ **LlmChatAgent**：同步/流式对话接口
 - ✅ **Tool Layer**：Spring AI 原生 @Tool 注解工具调用
-- ⏳ **MCP 支持**：Model Context Protocol（Phase 3）
-- ⏳ **Vector Store**：向量存储集成（Phase 3）
-- ⏳ **Agent Framework**：ReactAgent 模式（Phase 4）
+- ✅ **MCP 支持**：Model Context Protocol（Phase 4）
+- ⏳ **Vector Store**：向量存储集成（Phase 4.5）
+- ⏳ **Agent Framework**：ReactAgent 模式（Phase 5）
 
 **依赖**：llm-common
 
@@ -1426,17 +1426,77 @@ Flux<ChatStreamChunk> stream = executionService.streamWithMedia(
 
 ---
 
-### ⏳ Phase 4：MCP 和 Vector Store
+### ✅ Phase 4：MCP（Model Context Protocol）
 
-**目标**：支持 Model Context Protocol 和向量存储
+**目标**：集成 Spring AI MCP 支持，连接外部 MCP 服务器
 
-#### llm-agent 新增组件
+#### 已完成功能
 
-- [ ] **MCP 支持**
-  - [ ] `McpServer` 接口
-  - [ ] `McpResource` - 资源定义
-  - [ ] `McpPrompt` - 提示词模板
-  - [ ] `McpTool` - MCP 工具
+- [x] **MCP 服务器管理**
+  - [x] `McpServer` 实体 - 支持 STDIO、SSE、Streamable HTTP 三种传输类型
+  - [x] `McpServerMapper` - 数据库操作
+  - [x] `McpServerService` - 服务层
+  - [x] `McpServerController` - REST API（CRUD + 连接管理）
+
+- [x] **MCP 客户端管理**
+  - [x] `McpClientManager` - 客户端连接管理器
+  - [x] 自动初始化（启动时连接所有已启用的服务器）
+  - [x] 工具发现和回调获取
+  - [x] 连接/断开/重连操作
+
+- [x] **LlmChatAgent 集成**
+  - [x] `enableMcpTools` 参数支持
+  - [x] `mcpServerCodes` 指定服务器
+  - [x] 本地工具 + MCP 工具混合使用
+
+#### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/mcp-servers` | GET | 获取所有 MCP 服务器 |
+| `/api/mcp-servers/enabled` | GET | 获取已启用的服务器 |
+| `/api/mcp-servers/{id}` | GET/PUT/DELETE | 服务器 CRUD |
+| `/api/mcp-servers/{id}/connect` | POST | 连接服务器 |
+| `/api/mcp-servers/{id}/disconnect` | POST | 断开连接 |
+| `/api/mcp-servers/{id}/reconnect` | POST | 重新连接 |
+| `/api/mcp-servers/{id}/status` | GET | 获取连接状态和工具列表 |
+| `/api/mcp-servers/status` | GET | 获取所有服务器状态 |
+| `/api/mcp-servers/initialize-all` | POST | 初始化所有服务器 |
+
+#### 配置示例
+
+```yaml
+llm:
+  mcp:
+    enabled: true
+    request-timeout: 30
+    auto-initialize: true
+    client-type: SYNC
+```
+
+#### 使用示例
+
+```java
+// 在 ChatRequest 中启用 MCP 工具
+ChatRequest request = ChatRequest.builder()
+    .modelIdentifier("gpt-4")
+    .userMessage("今天北京天气怎么样？")
+    .enableMcpTools(true)  // 启用 MCP 工具
+    .mcpServerCodes(List.of("weather-server"))  // 可选：指定服务器
+    .build();
+
+String response = llmChatAgent.chat(request);
+```
+
+**注意**：当前版本仅支持 SSE 和 Streamable HTTP 传输类型，STDIO 传输暂不支持。
+
+---
+
+### ⏳ Phase 4.5：Vector Store（向量存储）
+
+**目标**：支持向量存储和 RAG
+
+#### 待实现组件
 
 - [ ] **Vector Store**
   - [ ] `VectorStore` 接口
@@ -1449,25 +1509,6 @@ Flux<ChatStreamChunk> stream = executionService.streamWithMedia(
   - [ ] `DocumentLoader` - 文档加载器
   - [ ] `TextSplitter` - 文本分割器
   - [ ] `RetrievalAdvisor` - 检索增强
-
-#### llm-service 业务支持
-
-- [ ] `DocumentService` - 文档管理
-- [ ] `KnowledgeBaseService` - 知识库管理
-
-#### llm-ops 后台支持
-
-- [ ] `DocumentController` - 文档上传/管理
-- [ ] `KnowledgeBaseController` - 知识库管理
-
-**预期效果**：
-```java
-// Agent 可以检索知识库
-Agent: "公司的退款政策是什么？"
--> VectorStore 检索相关文档
--> 将检索结果作为上下文传给 LLM
--> LLM 基于上下文生成回复
-```
 
 ---
 

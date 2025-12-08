@@ -1147,26 +1147,83 @@ llm-agent/src/main/java/com/llmmanager/agent/
 
 ---
 
-### 阶段 4：MCP + Vector Store（RAG 支持）🔲 待实现
+### 阶段 4：MCP（Model Context Protocol）✅ 已完成
 
 #### 目标
-- 集成 Model Context Protocol (MCP)
+- 集成 Spring AI MCP 支持
+- 连接外部 MCP 服务器
+- 使用 MCP 工具进行对话
+
+#### 已完成功能
+
+**1. MCP 服务器管理**
+- `McpServer` 实体 - 支持 STDIO、SSE、Streamable HTTP 三种传输类型
+- `McpServerMapper` - 数据库操作
+- `McpServerService` - 服务层
+- `McpServerController` - REST API（CRUD + 连接管理）
+
+**2. MCP 客户端管理**
+- `McpClientManager` - 客户端连接管理器
+- 自动初始化（启动时连接所有已启用的服务器）
+- 工具发现和回调获取
+- 连接/断开/重连操作
+
+**3. LlmChatAgent 集成**
+- `enableMcpTools` 参数支持
+- `mcpServerCodes` 指定服务器
+- 本地工具 + MCP 工具混合使用
+
+#### 包结构
+```
+llm-agent/src/main/java/com/llmmanager/agent/mcp/
+├── entity/
+│   └── McpServer.java           # MCP 服务器实体
+├── mapper/
+│   └── McpServerMapper.java     # 数据库 Mapper
+├── service/
+│   └── McpServerService.java    # 服务层
+├── config/
+│   ├── McpClientConfig.java     # 配置类
+│   └── McpClientProperties.java # 配置属性
+└── McpClientManager.java        # 客户端管理器
+```
+
+#### 配置示例
+```yaml
+llm:
+  mcp:
+    enabled: true
+    request-timeout: 30
+    auto-initialize: true
+    client-type: SYNC
+```
+
+#### 使用示例
+```java
+// 在 ChatRequest 中启用 MCP 工具
+ChatRequest request = ChatRequest.builder()
+    .modelIdentifier("gpt-4")
+    .userMessage("今天北京天气怎么样？")
+    .enableMcpTools(true)  // 启用 MCP 工具
+    .mcpServerCodes(List.of("weather-server"))  // 可选：指定服务器
+    .build();
+
+String response = llmChatAgent.chat(request);
+```
+
+**注意**：当前版本仅支持 SSE 和 Streamable HTTP 传输类型，STDIO 传输暂不支持。
+
+---
+
+### 阶段 4.5：Vector Store（RAG 支持）🔲 待实现
+
+#### 目标
 - 添加 Vector Store 支持
 - 实现 RAG（检索增强生成）
 
-#### 核心实现
+#### 待实现组件
 
-**1. MCP 客户端**
-```java
-public interface McpClient {
-    void connect(String serverUrl);
-    List<McpResource> listResources();
-    McpResource getResource(String resourceId);
-    ToolResult callTool(String toolName, Map<String, Object> params);
-}
-```
-
-**2. Vector Store 抽象**
+**1. Vector Store 抽象**
 ```java
 public interface VectorStore {
     void addDocuments(List<Document> documents);
@@ -1175,15 +1232,13 @@ public interface VectorStore {
 }
 ```
 
-**3. RAG 流程**
+**2. RAG 流程**
 ```java
 // 1. 用户提问
 // 2. VectorStore 检索相关文档
 // 3. 将文档作为上下文传递给模型
 // 4. 模型基于上下文生成回答
 ```
-
----
 
 ---
 
@@ -1674,8 +1729,9 @@ llm-agent/src/main/java/com/llmmanager/agent/
 1. ✅ **阶段 1**：Augmented LLM 基础抽象（已完成）
 2. ✅ **阶段 2**：工具调用层（已完成）
 3. ✅ **阶段 3**：消息增强与多模态（已完成）
-4. 🔲 **阶段 4**：MCP + Vector Store（Spring AI Alibaba 已内置）
-5. 🎯 **阶段 5**：Super Agent with Spring AI Alibaba（**推荐优先实现**）
+4. ✅ **阶段 4**：MCP（Model Context Protocol）（已完成）
+5. 🔲 **阶段 4.5**：Vector Store（RAG 支持）
+6. 🎯 **阶段 5**：Super Agent with Spring AI Alibaba（**推荐优先实现**）
 
 ### 总结
 
@@ -1686,4 +1742,4 @@ llm-agent/src/main/java/com/llmmanager/agent/
 - ✅ 开发效率提升 3 倍
 - ✅ 与 Spring 生态无缝集成
 
-阶段 4 可以根据实际需求选择性实现，因为 Spring AI Alibaba 已经内置了大部分功能。
+阶段 4.5 Vector Store 可以根据实际需求选择性实现，因为 Spring AI Alibaba 已经内置了大部分功能。

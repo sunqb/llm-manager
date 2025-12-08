@@ -14,7 +14,7 @@ import org.springframework.context.annotation.Configuration;
  * 聊天记忆配置类（简化版 - 统一 Spring AI）
  */
 @Configuration
-@EnableConfigurationProperties(ChatMemoryProperties.class)
+@EnableConfigurationProperties({ChatMemoryProperties.class, McpClientProperties.class})
 public class ChatMemoryConfig {
 
     /**

@@ -243,3 +243,41 @@ CREATE TABLE IF NOT EXISTS a_media_files (
     INDEX idx_media_type (media_type),
     INDEX idx_is_delete (is_delete)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='媒体文件表';
+
+-- MCP 服务器配置表
+-- 用于存储 MCP (Model Context Protocol) 服务器连接配置
+CREATE TABLE IF NOT EXISTS a_mcp_servers (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    server_code VARCHAR(32) NOT NULL UNIQUE COMMENT '服务器唯一标识（32位UUID）',
+    name VARCHAR(100) NOT NULL COMMENT '服务器名称',
+    description VARCHAR(500) COMMENT '服务器描述',
+
+    -- 传输类型
+    transport_type VARCHAR(20) NOT NULL COMMENT '传输类型：STDIO / SSE / STREAMABLE_HTTP',
+
+    -- STDIO 配置
+    command VARCHAR(255) COMMENT 'STDIO: 执行命令（如 npx, node, python）',
+    args JSON COMMENT 'STDIO: 命令参数列表（JSON 数组）',
+    env JSON COMMENT 'STDIO: 环境变量（JSON 对象）',
+
+    -- SSE / HTTP 配置
+    url VARCHAR(500) COMMENT 'SSE/HTTP: 服务器 URL',
+    sse_endpoint VARCHAR(100) DEFAULT '/sse' COMMENT 'SSE: SSE 端点路径',
+    http_endpoint VARCHAR(100) DEFAULT '/mcp' COMMENT 'HTTP: Streamable HTTP 端点路径',
+
+    -- 通用配置
+    request_timeout INT DEFAULT 30 COMMENT '请求超时时间（秒）',
+    enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    sort_order INT DEFAULT 0 COMMENT '排序权重（越小越靠前）',
+
+    -- 标准字段
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(50) COMMENT '创建人',
+    update_by VARCHAR(50) COMMENT '更新人',
+    is_delete TINYINT(1) DEFAULT 0 COMMENT '是否删除（0:正常 1:删除）',
+
+    INDEX idx_server_code (server_code),
+    INDEX idx_transport_type (transport_type),
+    INDEX idx_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务器配置表';

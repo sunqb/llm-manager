@@ -55,10 +55,6 @@ spring:
         allow:
         # IP黑名单（存在共同时，deny优先于allow）
         deny:
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:schema.sql
   ai:
     openai:
       api-key: ${OPENAI_API_KEY:sk-placeholder}
@@ -74,6 +70,8 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+      # 字段更新策略：NOT_NULL = null 值字段不参与更新
+      update-strategy: not_null
   mapper-locations: classpath*:/mapper/**/*.xml
   type-aliases-package: com.llmmanager.service.core.entity
 
@@ -94,3 +92,23 @@ sa-token:
   is-read-cookie: false
   # 是否从head中读取token
   is-read-head: true
+
+# 服务端口
+server:
+    port: 8080
+
+# LLM Manager 配置
+llm:
+  mcp:
+    enabled: true
+    request-timeout: 30
+    auto-initialize: true
+    client-type: SYNC
+
+# 调试 HTTP 请求日志（查看发送给 LLM 的请求体）
+logging:
+  level:
+    org.springframework.web.reactive.function.client.ExchangeFunctions: DEBUG
+    org.springframework.web.client.RestClient: DEBUG
+    reactor.netty.http.client: DEBUG
+    com.llmmanager.agent.mcp: INFO

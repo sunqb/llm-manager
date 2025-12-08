@@ -100,15 +100,26 @@ public class ChatRequest {
     // ==================== 工具调用相关 ====================
 
     /**
-     * 是否启用工具调用（Function Calling）
+     * 是否启用本地工具调用（@Tool 注解的方法）
      */
     @Builder.Default
     private Boolean enableTools = false;
 
     /**
-     * 指定可用的工具名称列表（null 表示使用所有已注册的工具）
+     * 指定可用的本地工具名称列表（null 表示使用所有已注册的工具）
      */
     private java.util.List<String> toolNames;
+
+    /**
+     * 是否启用 MCP 工具调用
+     */
+    @Builder.Default
+    private Boolean enableMcpTools = false;
+
+    /**
+     * 指定可用的 MCP 服务器标识列表（null 表示使用所有已连接的服务器）
+     */
+    private java.util.List<String> mcpServerCodes;
 
     /**
      * 工具调用模式（auto: 自动决定，none: 不使用工具，required: 必须使用工具）
