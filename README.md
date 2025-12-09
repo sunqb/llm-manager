@@ -546,6 +546,29 @@ npm install marked dompurify
 
 ## 更新日志
 
+### v2.4.0 (2025-12-09) 🔧
+
+**MCP 工具调用完善**
+
+- 🐛 修复：MCP 工具注册方式，使用 `toolCallbacks()` 替代 `tools()`
+- 🆕 新增：`enableMcpTools` 和 `mcpServerCodes` API 参数支持
+- 🆕 新增：本地工具和 MCP 工具混合调用支持
+- 🆕 新增：MCP SSE 连接测试类
+- 📝 新增：`tools() vs toolCallbacks()` 技术文档
+- ✅ 验证：ModelScope MCP Fetch 工具调用测试通过
+
+### v2.3.0 (2025-12-08) 🌐
+
+**MCP (Model Context Protocol) 集成**
+
+- 🆕 新增：MCP 服务器管理（支持 SSE、Streamable HTTP 传输）
+- 🆕 新增：McpClientManager 客户端连接管理器
+- 🆕 新增：McpServerController REST API（CRUD + 连接管理）
+- 🆕 新增：MCP 工具自动发现和注册
+- 🆕 新增：`a_mcp_servers` 数据库表
+- 📝 新增：MCP 服务器测试数据
+- 🔄 重构：分离 DDL 和 DML 数据库脚本
+
 ### v2.2.0 (2025-12-02) 🎉
 
 **架构简化**
