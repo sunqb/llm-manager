@@ -10,6 +10,7 @@
 
 # Maven
 llm-manager/target/
+llm-manager-parent/**/target/
 llm-manager/.mvn/
 llm-manager/mvnw
 llm-manager/mvnw.cmd
