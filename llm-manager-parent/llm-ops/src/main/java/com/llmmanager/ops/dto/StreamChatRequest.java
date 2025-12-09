@@ -39,14 +39,24 @@ public class StreamChatRequest {
     private String conversationId;
 
     /**
-     * 是否启用工具调用（默认 false）
+     * 是否启用本地工具调用（默认 false）
      */
     private Boolean enableTools = false;
 
     /**
-     * 工具名称列表（可选，为空则使用所有工具）
+     * 本地工具名称列表（可选，为空则使用所有本地工具）
      */
     private List<String> toolNames;
+
+    /**
+     * 是否启用 MCP 工具调用（默认 false）
+     */
+    private Boolean enableMcpTools = false;
+
+    /**
+     * MCP 服务器标识列表（可选，为空则使用所有已连接的 MCP 服务器）
+     */
+    private List<String> mcpServerCodes;
 
     /**
      * 媒体 URL 列表（图片等，可选）

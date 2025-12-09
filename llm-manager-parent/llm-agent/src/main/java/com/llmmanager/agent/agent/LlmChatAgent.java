@@ -17,6 +17,7 @@ import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MimeType;
@@ -276,32 +277,37 @@ public class LlmChatAgent {
 
     /**
      * 添加工具调用（支持本地工具和 MCP 工具）
+     *
+     * 注意：
+     * - 本地工具（@Tool 注解）使用 tools() 方法
+     * - MCP 工具（ToolCallback）使用 toolCallbacks() 方法
      */
     private void addTools(ChatClient.ChatClientRequestSpec promptBuilder, ChatRequest request) {
-        List<Object> allTools = new ArrayList<>();
+        int totalTools = 0;
 
-        // 1. 添加本地工具（@Tool 注解的方法）
+        // 1. 添加本地工具（@Tool 注解的方法）- 使用 tools()
         if (Boolean.TRUE.equals(request.getEnableTools())) {
             Object[] toolObjects = toolFunctionManager.getToolObjects(request.getToolNames());
             if (toolObjects.length > 0) {
                 log.info("[LlmChatAgent] 添加本地工具，数量: {}", toolObjects.length);
-                allTools.addAll(Arrays.asList(toolObjects));
+                promptBuilder.tools(toolObjects);
+                totalTools += toolObjects.length;
             }
         }
 
-        // 2. 添加 MCP 工具
+        // 2. 添加 MCP 工具（ToolCallback）- 使用 toolCallbacks()
         if (Boolean.TRUE.equals(request.getEnableMcpTools()) && mcpClientManager != null) {
-            org.springframework.ai.tool.ToolCallback[] mcpCallbacks = mcpClientManager.getAllToolCallbacks();
+            ToolCallback[] mcpCallbacks = mcpClientManager.getAllToolCallbacks();
             if (mcpCallbacks.length > 0) {
                 log.info("[LlmChatAgent] 添加 MCP 工具，数量: {}", mcpCallbacks.length);
-                allTools.addAll(Arrays.asList(mcpCallbacks));
+                promptBuilder.toolCallbacks(mcpCallbacks);
+                totalTools += mcpCallbacks.length;
             }
         }
 
-        // 3. 注册所有工具
-        if (!allTools.isEmpty()) {
-            log.info("[LlmChatAgent] 启用工具调用，总工具数: {}", allTools.size());
-            promptBuilder.tools(allTools.toArray());
+        // 3. 日志记录
+        if (totalTools > 0) {
+            log.info("[LlmChatAgent] 启用工具调用，总工具数: {}", totalTools);
         } else if (Boolean.TRUE.equals(request.getEnableTools()) || Boolean.TRUE.equals(request.getEnableMcpTools())) {
             log.warn("[LlmChatAgent] 启用工具调用，但没有可用的工具");
         }

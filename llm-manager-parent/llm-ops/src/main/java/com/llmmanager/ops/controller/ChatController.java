@@ -110,9 +110,14 @@ public class ChatController {
             return executeMediaChat(modelId, message, request.getMediaUrls(), conversationId, thinkingMode, reasoningFormat);
         }
 
-        // 3. 工具调用对话
-        if (Boolean.TRUE.equals(request.getEnableTools())) {
-            return executionService.streamWithTools(modelId, message, conversationId, request.getToolNames(), thinkingMode, reasoningFormat);
+        // 3. 工具调用对话（本地工具或 MCP 工具）
+        boolean hasLocalTools = Boolean.TRUE.equals(request.getEnableTools());
+        boolean hasMcpTools = Boolean.TRUE.equals(request.getEnableMcpTools());
+        if (hasLocalTools || hasMcpTools) {
+            return executionService.streamWithTools(modelId, message, conversationId,
+                    hasLocalTools ? request.getToolNames() : null,
+                    hasMcpTools, request.getMcpServerCodes(),
+                    thinkingMode, reasoningFormat);
         }
 
         // 4. 基础对话（自动支持 reasoning）

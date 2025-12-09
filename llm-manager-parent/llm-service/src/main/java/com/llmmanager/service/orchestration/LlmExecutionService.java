@@ -114,7 +114,8 @@ public class LlmExecutionService {
     public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationId,
                                          String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId, null, null, thinkingMode, reasoningFormat);
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+                null, false, null, null, thinkingMode, reasoningFormat);
     }
 
     /**
@@ -138,7 +139,8 @@ public class LlmExecutionService {
                                                    String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(agent.getLlmModelId());
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
-        return executeStream(model, userMessage, agent.getSystemPrompt(), temp, conversationId, null, null, thinkingMode, reasoningFormat);
+        return executeStream(model, userMessage, agent.getSystemPrompt(), temp, conversationId,
+                null, false, null, null, thinkingMode, reasoningFormat);
     }
 
     /**
@@ -184,13 +186,26 @@ public class LlmExecutionService {
     }
 
     /**
-     * 带工具调用的流式对话
+     * 带工具调用的流式对话（支持本地工具和 MCP 工具）
+     */
+    public Flux<ChatStreamChunk> streamWithTools(Long modelId, String userMessage,
+                                                  String conversationId, List<String> toolNames,
+                                                  boolean enableMcpTools, List<String> mcpServerCodes,
+                                                  String thinkingMode, String reasoningFormat) {
+        LlmModel model = getModel(modelId);
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+                toolNames, enableMcpTools, mcpServerCodes, null, thinkingMode, reasoningFormat);
+    }
+
+    /**
+     * 带工具调用的流式对话（仅本地工具）
      */
     public Flux<ChatStreamChunk> streamWithTools(Long modelId, String userMessage,
                                                   String conversationId, List<String> toolNames,
                                                   String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId, toolNames, null, thinkingMode, reasoningFormat);
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+                toolNames, false, null, null, thinkingMode, reasoningFormat);
     }
 
     /**
@@ -208,7 +223,8 @@ public class LlmExecutionService {
                                                   List<MediaMessage.MediaContent> mediaContents,
                                                   String conversationId, String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId, null, mediaContents, thinkingMode, reasoningFormat);
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+                null, false, null, mediaContents, thinkingMode, reasoningFormat);
     }
 
     /**
@@ -228,9 +244,11 @@ public class LlmExecutionService {
     private Flux<ChatStreamChunk> executeStream(LlmModel model, String userMessage, String systemPrompt,
                                                  Double temperature, String conversationId,
                                                  List<String> toolNames,
+                                                 boolean enableMcpTools, List<String> mcpServerCodes,
                                                  List<MediaMessage.MediaContent> mediaContents,
                                                  String thinkingMode, String reasoningFormat) {
-        log.info("[LlmExecutionService] executeStream - thinkingMode: '{}', reasoningFormat: '{}'", thinkingMode, reasoningFormat);
+        log.info("[LlmExecutionService] executeStream - thinkingMode: '{}', reasoningFormat: '{}', enableMcpTools: {}",
+                thinkingMode, reasoningFormat, enableMcpTools);
 
         Channel channel = getChannel(model);
 
@@ -244,9 +262,17 @@ public class LlmExecutionService {
                 .systemPrompt(systemPrompt)
                 .userMessage(userMessage);
 
-        // 工具调用
-        if (toolNames != null) {
+        // 本地工具调用
+        if (toolNames != null && !toolNames.isEmpty()) {
             builder.enableTools(true).toolNames(toolNames);
+        }
+
+        // MCP 工具调用
+        if (enableMcpTools) {
+            builder.enableMcpTools(true);
+            if (mcpServerCodes != null && !mcpServerCodes.isEmpty()) {
+                builder.mcpServerCodes(mcpServerCodes);
+            }
         }
 
         // 多模态
