@@ -1731,15 +1731,60 @@ llm-agent/src/main/java/com/llmmanager/agent/
 3. ✅ **阶段 3**：消息增强与多模态（已完成）
 4. ✅ **阶段 4**：MCP（Model Context Protocol）（已完成）
 5. 🔲 **阶段 4.5**：Vector Store（RAG 支持）
-6. 🎯 **阶段 5**：Super Agent with Spring AI Alibaba（**推荐优先实现**）
+6. 🔧 **阶段 5a**：Graph 工作流（**已完成，未测试**）
+7. 🔲 **阶段 5b**：ReactAgent 智能体（需等待 `spring-ai-alibaba-agent-framework` 发布）
+
+---
+
+### 阶段 5a：Graph 工作流（已完成，未测试）
+
+> **⚠️ 注意**：此功能已实现但尚未测试，请谨慎使用。
+
+基于 `spring-ai-alibaba-graph-core:1.0.0.2` 实现的工作流编排。
+
+#### 已实现功能
+
+- **DeepResearch 工作流**：问题分解 → 信息收集 → 分析 → 综合 → 质量检查（条件路由迭代）
+- **5 个工作流节点**：`QueryDecompositionNode`、`InformationGatheringNode`、`AnalysisNode`、`SynthesisNode`、`QualityCheckNode`
+- **状态管理**：`ResearchState` 使用 `AppendStrategy` 和 `ReplaceStrategy`
+- **执行记录**：`GraphTask`、`GraphStep` 实体和服务
+
+#### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/graph/
+├── GraphWorkflowService.java      # 工作流服务
+├── workflow/DeepResearchWorkflow.java
+├── node/                          # 5 个节点实现
+└── state/ResearchState.java
+```
+
+#### API 端点
+
+- `POST /api/graph/research/{modelId}` - 同步执行
+- `GET /api/graph/research/{modelId}/stream` - 流式执行（SSE）
+- `POST /api/graph/research/{modelId}/with-progress` - 带进度执行
+
+#### 数据库表
+
+- `p_graph_workflows` - 工作流配置
+- `a_graph_tasks` - 任务记录
+- `a_graph_steps` - 步骤记录
+
+#### 概念区分
+
+| 概念 | 说明 | 依赖 |
+|------|------|------|
+| **Graph（工作流）** | 预定义节点和边，固定流程 | `spring-ai-alibaba-graph-core` ✅ |
+| **ReactAgent（智能体）** | LLM 自主推理，动态决策 | `spring-ai-alibaba-agent-framework` ❌ 未发布 |
+
+---
 
 ### 总结
 
-**强烈建议使用 Spring AI Alibaba 框架**，理由：
-- ✅ 官方维护，稳定可靠
-- ✅ 功能完整，开箱即用
-- ✅ 文档齐全，社区活跃
-- ✅ 开发效率提升 3 倍
-- ✅ 与 Spring 生态无缝集成
+**当前状态**：
+- ✅ Graph 工作流已实现（基于 `graph-core:1.0.0.2`），但未测试
+- ❌ ReactAgent 需等待 `spring-ai-alibaba-agent-framework` 发布到 Maven Central
+- ❌ A2A（Agent-to-Agent）需等待框架发布
 
-阶段 4.5 Vector Store 可以根据实际需求选择性实现，因为 Spring AI Alibaba 已经内置了大部分功能。
+阶段 4.5 Vector Store 可以根据实际需求选择性实现。

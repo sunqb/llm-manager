@@ -283,5 +283,93 @@ CREATE TABLE IF NOT EXISTS a_mcp_servers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务器配置表';
 
 -- =============================================
+-- Graph 工作流相关表
+-- =============================================
+
+-- Graph 工作流配置表（业务配置）
+CREATE TABLE IF NOT EXISTS p_graph_workflows (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    name VARCHAR(255) NOT NULL COMMENT '工作流名称',
+    slug VARCHAR(255) NOT NULL UNIQUE COMMENT '唯一标识（用于URL访问）',
+    description TEXT COMMENT '描述',
+    workflow_type VARCHAR(50) NOT NULL DEFAULT 'DEEP_RESEARCH' COMMENT '工作流类型：DEEP_RESEARCH/SEQUENTIAL/PARALLEL/CUSTOM',
+    llm_model_id BIGINT COMMENT '关联的默认模型ID',
+    max_iterations INT DEFAULT 3 COMMENT '最大迭代轮数',
+    quality_threshold INT DEFAULT 80 COMMENT '质量评分阈值（达到此分数停止迭代）',
+    enabled_tools JSON COMMENT '启用的工具列表（JSON数组）',
+    mcp_servers JSON COMMENT 'MCP服务器配置（JSON数组）',
+    system_prompt TEXT COMMENT '系统提示词（定制工作流行为）',
+    is_active TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_slug (slug),
+    INDEX idx_workflow_type (workflow_type),
+    INDEX idx_llm_model_id (llm_model_id),
+    INDEX idx_is_active (is_active),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Graph工作流配置表';
+
+-- Graph 工作流任务执行记录表
+CREATE TABLE IF NOT EXISTS a_graph_tasks (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    task_code VARCHAR(32) NOT NULL UNIQUE COMMENT '任务唯一标识（UUID）',
+    graph_workflow_id BIGINT COMMENT '关联的工作流配置ID',
+    model_id BIGINT COMMENT '使用的模型ID',
+    conversation_code VARCHAR(100) COMMENT '关联的会话标识',
+    question TEXT COMMENT '用户问题/输入',
+    answer TEXT COMMENT '最终答案/输出',
+    analysis TEXT COMMENT '分析结果',
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '状态：PENDING/RUNNING/SUCCESS/FAILED/CANCELLED',
+    quality_score INT COMMENT '质量评分（0-100）',
+    iteration_count INT DEFAULT 0 COMMENT '实际迭代次数',
+    total_duration_ms BIGINT COMMENT '总耗时（毫秒）',
+    start_time DATETIME COMMENT '开始时间',
+    end_time DATETIME COMMENT '结束时间',
+    error_message TEXT COMMENT '错误信息',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_task_code (task_code),
+    INDEX idx_graph_workflow_id (graph_workflow_id),
+    INDEX idx_model_id (model_id),
+    INDEX idx_conversation_code (conversation_code),
+    INDEX idx_status (status),
+    INDEX idx_create_time (create_time),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Graph工作流任务执行记录表';
+
+-- Graph 工作流步骤执行记录表
+CREATE TABLE IF NOT EXISTS a_graph_steps (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    step_code VARCHAR(32) NOT NULL UNIQUE COMMENT '步骤唯一标识（UUID）',
+    task_code VARCHAR(32) NOT NULL COMMENT '关联的任务标识',
+    node_name VARCHAR(100) NOT NULL COMMENT '节点名称',
+    iteration_round INT DEFAULT 1 COMMENT '迭代轮次（从1开始）',
+    step_index INT DEFAULT 1 COMMENT '步骤序号（同一轮次内从1开始）',
+    input_data TEXT COMMENT '输入数据（JSON）',
+    output_data TEXT COMMENT '输出数据（JSON）',
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '状态：PENDING/RUNNING/SUCCESS/FAILED/SKIPPED',
+    duration_ms BIGINT COMMENT '耗时（毫秒）',
+    start_time DATETIME COMMENT '开始时间',
+    end_time DATETIME COMMENT '结束时间',
+    error_message TEXT COMMENT '错误信息',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_step_code (step_code),
+    INDEX idx_task_code (task_code),
+    INDEX idx_node_name (node_name),
+    INDEX idx_status (status),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Graph工作流步骤执行记录表';
+
+-- =============================================
 -- 初始化数据请查看 initdata.sql
 -- =============================================

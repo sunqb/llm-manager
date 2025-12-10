@@ -36,6 +36,7 @@
         <mysql.version>8.3.0</mysql.version>
         <sa-token.version>1.37.0</sa-token.version>
         <spring-ai.version>1.1.0</spring-ai.version>
+        <spring-ai-alibaba.version>1.0.0.2</spring-ai-alibaba.version>
     </properties>
 
     <dependencyManagement>
@@ -97,6 +98,13 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-starter-mcp-client</artifactId>
                 <version>${spring-ai.version}</version>
+            </dependency>
+
+            <!-- Spring AI Alibaba Graph Core -->
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-graph-core</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

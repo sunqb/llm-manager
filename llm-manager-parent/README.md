@@ -1512,13 +1512,90 @@ String response = llmChatAgent.chat(request);
 
 ---
 
-### ⏳ Phase 5：Agent Framework（Agent 框架）
+### 🔧 Phase 5a：Graph 工作流（已完成，未测试）
 
-**目标**：实现 ReactAgent 模式和多 Agent 协作（推荐使用 Spring AI Alibaba）
+> **⚠️ 注意**：此功能已实现但尚未测试，请谨慎使用。
 
-#### llm-agent 新增组件
+**目标**：基于 Spring AI Alibaba Graph Core 实现工作流编排
 
-- [ ] **ReactAgent**
+#### 已实现组件
+
+- [x] **Graph 工作流核心**
+  - [x] `DeepResearchWorkflow` - 深度研究工作流（问题分解→信息收集→分析→综合→质量检查）
+  - [x] `ResearchState` - 工作流状态管理（AppendStrategy/ReplaceStrategy）
+  - [x] `GraphWorkflowService` - 工作流服务
+
+- [x] **工作流节点**
+  - [x] `QueryDecompositionNode` - 问题分解节点
+  - [x] `InformationGatheringNode` - 信息收集节点
+  - [x] `AnalysisNode` - 分析节点
+  - [x] `SynthesisNode` - 综合节点
+  - [x] `QualityCheckNode` - 质量检查节点（条件路由）
+
+- [x] **执行记录**
+  - [x] `GraphTask` - 任务执行记录
+  - [x] `GraphStep` - 步骤执行记录
+  - [x] `GraphWorkflow` - 工作流配置
+
+#### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `POST /api/graph/research/{modelId}` | POST | 同步执行深度研究 |
+| `GET /api/graph/research/{modelId}/stream` | GET | 流式执行深度研究（SSE） |
+| `POST /api/graph/research/{modelId}/with-progress` | POST | 同步执行（带进度） |
+
+#### 数据库表
+
+| 表名 | 说明 |
+|------|------|
+| `p_graph_workflows` | 工作流配置表 |
+| `a_graph_tasks` | 任务执行记录表 |
+| `a_graph_steps` | 步骤执行记录表 |
+
+#### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/graph/
+├── GraphWorkflowService.java      # 工作流服务
+├── workflow/
+│   └── DeepResearchWorkflow.java  # DeepResearch 工作流
+├── node/
+│   ├── QueryDecompositionNode.java
+│   ├── InformationGatheringNode.java
+│   ├── AnalysisNode.java
+│   ├── SynthesisNode.java
+│   └── QualityCheckNode.java
+└── state/
+    └── ResearchState.java         # 状态管理
+```
+
+#### 依赖
+
+```xml
+<dependency>
+    <groupId>com.alibaba.cloud.ai</groupId>
+    <artifactId>spring-ai-alibaba-graph-core</artifactId>
+    <version>1.0.0.2</version>
+</dependency>
+```
+
+#### 概念说明
+
+| 概念 | 说明 |
+|------|------|
+| **Graph（工作流）** | 预定义的节点和边，固定流程编排 |
+| **ReactAgent（智能体）** | LLM 自主推理，动态决定下一步（需要 `spring-ai-alibaba-agent-framework`，暂未发布） |
+
+---
+
+### ⏳ Phase 5b：Agent Framework（Agent 框架）
+
+**目标**：实现 ReactAgent 模式和多 Agent 协作（需等待 `spring-ai-alibaba-agent-framework` 发布到 Maven Central）
+
+#### llm-agent 待实现组件
+
+- [ ] **ReactAgent**（需 `spring-ai-alibaba-agent-framework`）
   - [ ] `ReactAgent` - 推理-行动循环
   - [ ] `AgentExecutor` - Agent 执行器
   - [ ] `AgentPlanner` - 任务规划
@@ -1529,14 +1606,13 @@ String response = llmChatAgent.chat(request);
   - [ ] `AgentCommunication` - Agent 间通信
   - [ ] `AgentChain` - Agent 链式调用
 
-#### llm-service 业务支持
-
-- [ ] `AgentWorkflowService` - 工作流管理
-- [ ] `AgentTeamService` - Agent 团队管理
+- [ ] **A2A（Agent-to-Agent）**
+  - [ ] 多 Agent 协作协议
+  - [ ] Agent 发现和通信
 
 **预期效果**：
 ```java
-// ReactAgent 自主推理和行动
+// ReactAgent 自主推理和行动（区别于 Graph 工作流的固定流程）
 User: "帮我预订明天去上海的机票"
 -> Agent 思考：需要知道用户的出发城市
 -> Agent 行动：调用 UserProfileTool 获取信息

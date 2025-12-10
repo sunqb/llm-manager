@@ -36,6 +36,12 @@
             <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
 
+        <!-- Spring AI Alibaba Graph Core -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-graph-core</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter (不含web) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
