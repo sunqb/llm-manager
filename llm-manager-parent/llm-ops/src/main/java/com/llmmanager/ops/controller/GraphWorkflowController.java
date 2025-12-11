@@ -1,16 +1,17 @@
 package com.llmmanager.ops.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.llmmanager.service.orchestration.GraphExecutionService;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchProgress;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import javax.annotation.Resource;
-import java.io.IOException;
 import java.util.List;
 
 /**
@@ -25,6 +26,8 @@ public class GraphWorkflowController {
     @Resource
     private GraphExecutionService graphExecutionService;
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     /**
      * 同步执行深度研究
      */
@@ -37,51 +40,32 @@ public class GraphWorkflowController {
     }
 
     /**
-     * 流式执行深度研究（SSE）
+     * 流式执行深度研究（WebFlux SSE）
      */
     @GetMapping(value = "/research/{modelId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter researchStream(
+    public Flux<ServerSentEvent<String>> researchStream(
             @PathVariable Long modelId,
             @RequestParam String question) {
         log.info("[Graph] 流式深度研究请求, modelId: {}, question: {}", modelId, question);
 
-        SseEmitter emitter = new SseEmitter(600000L); // 10分钟超时
-
-        Flux<ResearchProgress> progressFlux = graphExecutionService.deepResearchStream(modelId, question);
-
-        progressFlux.subscribe(
-                progress -> {
-                    try {
-                        emitter.send(SseEmitter.event()
-                                .name("progress")
-                                .data(progress));
-                    } catch (IOException e) {
-                        log.error("[Graph] SSE 发送失败", e);
-                        emitter.completeWithError(e);
-                    }
-                },
-                error -> {
+        return graphExecutionService.deepResearchStream(modelId, question)
+                .map(progress -> ServerSentEvent.<String>builder()
+                        .event("progress")
+                        .data(toJson(progress))
+                        .build())
+                .concatWith(Flux.just(
+                        ServerSentEvent.<String>builder()
+                                .event("complete")
+                                .data("[DONE]")
+                                .build()))
+                .onErrorResume(error -> {
                     log.error("[Graph] 流式研究失败", error);
-                    try {
-                        emitter.send(SseEmitter.event()
-                                .name("error")
-                                .data(error.getMessage()));
-                    } catch (IOException ignored) {
-                    }
-                    emitter.completeWithError(error);
-                },
-                () -> {
-                    try {
-                        emitter.send(SseEmitter.event()
-                                .name("complete")
-                                .data("[DONE]"));
-                    } catch (IOException ignored) {
-                    }
-                    emitter.complete();
-                }
-        );
-
-        return emitter;
+                    return Flux.just(
+                            ServerSentEvent.<String>builder()
+                                    .event("error")
+                                    .data(error.getMessage())
+                                    .build());
+                });
     }
 
     /**
@@ -93,5 +77,14 @@ public class GraphWorkflowController {
             @RequestBody String question) {
         log.info("[Graph] 带进度深度研究请求, modelId: {}, question: {}", modelId, question);
         return graphExecutionService.deepResearchWithProgress(modelId, question);
+    }
+
+    private String toJson(Object obj) {
+        try {
+            return objectMapper.writeValueAsString(obj);
+        } catch (JsonProcessingException e) {
+            log.error("[Graph] JSON 序列化失败", e);
+            return "{}";
+        }
     }
 }
