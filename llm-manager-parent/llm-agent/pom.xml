@@ -42,6 +42,12 @@
             <artifactId>spring-ai-alibaba-graph-core</artifactId>
         </dependency>
 
+        <!-- Gson (required by spring-ai-alibaba-graph-core) -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter (不含web) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
