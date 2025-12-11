@@ -1,0 +1,166 @@
+{
+  "name": "DeepResearch",
+  "description": "深度研究工作流 - 将复杂问题分解、收集信息、分析并综合成高质量研究报告",
+  "version": "1.0.0",
+  "stateConfig": {
+    "keys": [
+      {"key": "question", "append": false, "description": "原始研究问题"},
+      {"key": "sub_questions", "append": false, "description": "分解后的子问题列表"},
+      {"key": "search_results", "append": true, "description": "搜索收集的信息"},
+      {"key": "analysis_result", "append": false, "description": "分析结果"},
+      {"key": "final_answer", "append": false, "description": "最终研究报告"},
+      {"key": "quality_score_raw", "append": false, "description": "质量评分原始文本"},
+      {"key": "quality_score", "append": false, "description": "质量评分数值"},
+      {"key": "iteration_count", "append": false, "description": "迭代次数"},
+      {"key": "next_node", "append": false, "description": "下一步路由决策"},
+      {"key": "current_node", "append": false, "description": "当前节点"}
+    ]
+  },
+  "nodes": [
+    {
+      "id": "query_decomposition",
+      "type": "LLM_NODE",
+      "name": "问题分解",
+      "description": "将复杂问题分解为3-5个可搜索的子问题",
+      "config": {
+        "input_key": "question",
+        "output_key": "sub_questions",
+        "system_prompt": "你是一个研究助手。请将以下复杂问题分解为3-5个可以独立搜索的子问题。每个子问题应该是具体的、可搜索的。请直接列出子问题，每行一个，不要编号，不要其他解释。",
+        "temperature": 0.7
+      }
+    },
+    {
+      "id": "information_gathering",
+      "type": "LLM_NODE",
+      "name": "信息收集",
+      "description": "根据子问题收集相关信息（模拟搜索）",
+      "config": {
+        "input_key": "sub_questions",
+        "output_key": "search_results",
+        "system_prompt": "你是一个知识渊博的研究助手。请针对以下每个子问题，提供详细、准确的信息和见解。确保信息来源可靠，内容全面。对每个问题分别回答，用清晰的分隔。",
+        "temperature": 0.5
+      }
+    },
+    {
+      "id": "analysis",
+      "type": "LLM_NODE",
+      "name": "深度分析",
+      "description": "对收集的信息进行深度分析",
+      "config": {
+        "input_key": "search_results",
+        "output_key": "analysis_result",
+        "system_prompt": "你是一个分析专家。请对以下收集的信息进行深度分析：\n1. 识别关键主题和模式\n2. 评估信息的可靠性和相关性\n3. 发现信息之间的联系\n4. 提出独到的见解\n\n请提供结构化的分析结果。",
+        "temperature": 0.6
+      }
+    },
+    {
+      "id": "synthesis",
+      "type": "LLM_NODE",
+      "name": "综合报告",
+      "description": "将分析结果综合成完整的研究报告",
+      "config": {
+        "input_key": "analysis_result",
+        "output_key": "final_answer",
+        "system_prompt": "你是一个专业的研究报告撰写专家。请基于以下分析结果，撰写一份全面、结构清晰的研究报告。报告应该包括：\n1. 摘要（简要概述主要发现）\n2. 主要发现（详细阐述关键点）\n3. 深入分析（提供深度见解）\n4. 结论与建议\n\n确保报告专业、可读性强、有实用价值。",
+        "temperature": 0.7
+      }
+    },
+    {
+      "id": "quality_check_llm",
+      "type": "LLM_NODE",
+      "name": "质量评估（LLM）",
+      "description": "使用 LLM 评估报告质量并输出评分",
+      "config": {
+        "input_key": "final_answer",
+        "output_key": "quality_score_raw",
+        "system_prompt": "请评估以下研究报告的质量。从以下维度综合评分（0-100）：\n1. 完整性：是否全面回答了问题\n2. 准确性：信息是否准确\n3. 逻辑性：论证是否有逻辑\n4. 实用性：是否提供了有价值的见解\n\n只需要返回一个总体评分数字（0-100），不要其他任何内容。",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "quality_score_parse",
+      "type": "TRANSFORM_NODE",
+      "name": "评分解析",
+      "description": "从 LLM 输出中解析数字评分",
+      "config": {
+        "transform_type": "PARSE_NUMBER",
+        "input_keys": ["quality_score_raw"],
+        "output_key": "quality_score"
+      }
+    },
+    {
+      "id": "iteration_increment",
+      "type": "TRANSFORM_NODE",
+      "name": "迭代计数",
+      "description": "增加迭代次数计数器",
+      "config": {
+        "transform_type": "INCREMENT",
+        "input_keys": ["iteration_count"],
+        "output_key": "iteration_count"
+      }
+    },
+    {
+      "id": "quality_threshold_check",
+      "type": "TRANSFORM_NODE",
+      "name": "质量阈值检查",
+      "description": "检查质量评分是否达到阈值",
+      "config": {
+        "transform_type": "THRESHOLD_CHECK",
+        "input_keys": ["quality_score"],
+        "output_key": "next_node",
+        "threshold": 80
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "START",
+      "to": "query_decomposition",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "query_decomposition",
+      "to": "information_gathering",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "information_gathering",
+      "to": "analysis",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "analysis",
+      "to": "synthesis",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "synthesis",
+      "to": "quality_check_llm",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "quality_check_llm",
+      "to": "quality_score_parse",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "quality_score_parse",
+      "to": "iteration_increment",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "iteration_increment",
+      "to": "quality_threshold_check",
+      "type": "SIMPLE"
+    },
+    {
+      "from": "quality_threshold_check",
+      "to": null,
+      "type": "CONDITIONAL",
+      "routes": {
+        "PASS": "END",
+        "NEED_IMPROVEMENT": "analysis"
+      }
+    }
+  ]
+}

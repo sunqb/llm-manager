@@ -1731,60 +1731,174 @@ llm-agent/src/main/java/com/llmmanager/agent/
 3. ✅ **阶段 3**：消息增强与多模态（已完成）
 4. ✅ **阶段 4**：MCP（Model Context Protocol）（已完成）
 5. 🔲 **阶段 4.5**：Vector Store（RAG 支持）
-6. 🔧 **阶段 5a**：Graph 工作流（**已完成，未测试**）
+6. ✅ **阶段 5a**：Graph 工作流（**已完成，支持动态配置**）
 7. 🔲 **阶段 5b**：ReactAgent 智能体（需等待 `spring-ai-alibaba-agent-framework` 发布）
 
 ---
 
-### 阶段 5a：Graph 工作流（已完成，未测试）
+### 阶段 5a：Graph 工作流（已完成，支持动态配置）
 
-> **⚠️ 注意**：此功能已实现但尚未测试，请谨慎使用。
+基于 `spring-ai-alibaba-graph-core:1.0.0.2` 实现的工作流编排，支持两种方式：
 
-基于 `spring-ai-alibaba-graph-core:1.0.0.2` 实现的工作流编排。
+1. **硬编码工作流**：适用于固定流程（如原有 DeepResearch）
+2. **动态工作流**：通过 JSON 配置创建自定义工作流（新增功能）
 
-#### 已实现功能
+> 📖 **详细配置文档**：[`docs/dynamic-workflow-guide.md`](./docs/dynamic-workflow-guide.md)
+> 包含：配置值速查表、节点类型详解、DeepResearch 工作流详解
 
-- **DeepResearch 工作流**：问题分解 → 信息收集 → 分析 → 综合 → 质量检查（条件路由迭代）
-- **5 个工作流节点**：`QueryDecompositionNode`、`InformationGatheringNode`、`AnalysisNode`、`SynthesisNode`、`QualityCheckNode`
-- **状态管理**：`ResearchState` 使用 `AppendStrategy` 和 `ReplaceStrategy`
-- **执行记录**：`GraphTask`、`GraphStep` 实体和服务
+#### 动态工作流架构
+
+**设计理念**：遵循 Spring AI Alibaba 官方推荐
+- 使用 `OverAllState.value(key)` 直接从状态获取值
+- 使用 `ChatClient.prompt().system().user()` 构建提示词
+- 通过 `next_node` 状态键实现条件路由
+- 节点返回 `Map<String, Object>` 更新状态
+
+**核心组件**：
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `DynamicGraphBuilder` | llm-agent/.../graph/dynamic/ | 动态构建 StateGraph |
+| `NodeExecutor` | llm-agent/.../graph/dynamic/executor/ | 节点执行器接口 |
+| `LlmNodeExecutor` | executor/LlmNodeExecutor.java | LLM 调用节点 |
+| `ConditionNodeExecutor` | executor/ConditionNodeExecutor.java | 条件路由节点 |
+| `TransformNodeExecutor` | executor/TransformNodeExecutor.java | 数据转换节点 |
+| `DynamicWorkflowController` | llm-ops/.../controller/ | REST API |
+
+#### 可用节点类型
+
+| 节点类型 | 说明 | 必需配置 |
+|---------|------|---------|
+| `LLM_NODE` | 调用 LLM 进行文本生成 | `input_key`, `output_key` |
+| `CONDITION_NODE` | 条件路由决策 | `condition_field`, `routes` |
+| `TRANSFORM_NODE` | 数据转换处理 | `transform_type`, `input_keys`, `output_key` |
+
+**TransformNodeExecutor 支持的转换类型**：
+
+| 类型 | 说明 |
+|------|------|
+| `MERGE` | 合并多个字段值（换行分隔） |
+| `EXTRACT` | 提取单个字段值 |
+| `FORMAT` | 格式化多字段（key: value） |
+| `SPLIT_LINES` | 按行分割为列表 |
+| `PARSE_NUMBER` | 解析数字 |
+| `PARSE_JSON` | 解析 JSON |
+| `THRESHOLD_CHECK` | 阈值检查（返回 PASS/NEED_IMPROVEMENT） |
+| `INCREMENT` | 递增数值 |
+
+#### 工作流 JSON 配置格式
+
+```json
+{
+  "name": "工作流名称",
+  "description": "描述",
+  "stateConfig": {
+    "keys": [
+      {"key": "question", "append": false},
+      {"key": "results", "append": true}
+    ]
+  },
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "LLM_NODE",
+      "name": "节点名称",
+      "config": {
+        "input_key": "question",
+        "output_key": "answer",
+        "system_prompt": "你是一个助手..."
+      }
+    }
+  ],
+  "edges": [
+    {"from": "START", "to": "node_1", "type": "SIMPLE"},
+    {"from": "node_1", "to": "END", "type": "SIMPLE"}
+  ]
+}
+```
+
+#### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/workflow/node-types` | GET | 获取可用节点类型 |
+| `/api/workflow/validate` | POST | 验证工作流配置 |
+| `/api/workflow/execute/{modelId}` | POST | 执行自定义工作流 |
+| `/api/workflow/deep-research/{modelId}` | POST | 执行 DeepResearch 工作流 |
+
+#### 使用示例
+
+**1. 获取节点类型**
+```bash
+curl http://localhost:8080/api/workflow/node-types
+```
+
+**2. 执行 DeepResearch**
+```bash
+curl -X POST http://localhost:8080/api/workflow/deep-research/1 \
+  -H "Content-Type: application/json" \
+  -d '{"question": "人工智能的发展历史是什么？"}'
+```
+
+**3. 执行自定义工作流**
+```bash
+curl -X POST http://localhost:8080/api/workflow/execute/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workflowConfig": "{...JSON配置...}",
+    "initialState": {"question": "你的问题"}
+  }'
+```
 
 #### 包结构
 
 ```
 llm-agent/src/main/java/com/llmmanager/agent/graph/
-├── GraphWorkflowService.java      # 工作流服务
-├── workflow/DeepResearchWorkflow.java
-├── node/                          # 5 个节点实现
-└── state/ResearchState.java
+├── dynamic/                           # 动态工作流（新增）
+│   ├── DynamicGraphBuilder.java       # 核心构建器
+│   ├── DynamicGraphTestService.java   # 测试服务
+│   ├── dto/                           # 配置 DTO
+│   │   ├── GraphWorkflowConfig.java
+│   │   ├── NodeConfig.java
+│   │   ├── EdgeConfig.java
+│   │   └── StateKeyConfig.java
+│   └── executor/                      # 节点执行器
+│       ├── NodeExecutor.java          # 接口
+│       ├── LlmNodeExecutor.java       # LLM 节点
+│       ├── ConditionNodeExecutor.java # 条件节点
+│       └── TransformNodeExecutor.java # 转换节点
+├── workflow/                          # 硬编码工作流（原有）
+│   └── DeepResearchWorkflow.java
+├── node/                              # 硬编码节点（原有）
+└── state/                             # 状态定义（原有）
+
+llm-agent/src/main/resources/
+└── workflows/
+    └── deep-research.json             # DeepResearch 配置示例
+
+llm-service/src/main/java/com/llmmanager/service/graph/
+└── DynamicWorkflowExecutionService.java  # 执行服务
+
+llm-ops/src/main/java/com/llmmanager/ops/controller/
+└── DynamicWorkflowController.java     # REST API
 ```
-
-#### API 端点
-
-- `POST /api/graph/research/{modelId}` - 同步执行
-- `GET /api/graph/research/{modelId}/stream` - 流式执行（SSE）
-- `POST /api/graph/research/{modelId}/with-progress` - 带进度执行
-
-#### 数据库表
-
-- `p_graph_workflows` - 工作流配置
-- `a_graph_tasks` - 任务记录
-- `a_graph_steps` - 步骤记录
 
 #### 概念区分
 
 | 概念 | 说明 | 依赖 |
 |------|------|------|
-| **Graph（工作流）** | 预定义节点和边，固定流程 | `spring-ai-alibaba-graph-core` ✅ |
-| **ReactAgent（智能体）** | LLM 自主推理，动态决策 | `spring-ai-alibaba-agent-framework` ❌ 未发布 |
+| **动态 Graph** | JSON 配置驱动，用户可自定义 | `spring-ai-alibaba-graph-core` ✅ |
+| **硬编码 Graph** | 代码定义，固定流程 | `spring-ai-alibaba-graph-core` ✅ |
+| **ReactAgent** | LLM 自主推理，动态决策 | `spring-ai-alibaba-agent-framework` ❌ |
 
 ---
 
 ### 总结
 
 **当前状态**：
-- ✅ Graph 工作流已实现（基于 `graph-core:1.0.0.2`），但未测试
-- ❌ ReactAgent 需等待 `spring-ai-alibaba-agent-framework` 发布到 Maven Central
+- ✅ Graph 工作流（硬编码）已实现
+- ✅ 动态工作流（JSON 配置）已实现
+- ❌ ReactAgent 需等待 `spring-ai-alibaba-agent-framework` 发布
 - ❌ A2A（Agent-to-Agent）需等待框架发布
 
-阶段 4.5 Vector Store 可以根据实际需求选择性实现。
+阶段 4.5 Vector Store 可根据实际需求选择性实现。

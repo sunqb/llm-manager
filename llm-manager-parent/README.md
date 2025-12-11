@@ -1512,80 +1512,445 @@ String response = llmChatAgent.chat(request);
 
 ---
 
-### 🔧 Phase 5a：Graph 工作流（已完成，未测试）
+### 🔧 Phase 5a：Graph 工作流（已完成，支持动态配置）
 
-> **⚠️ 注意**：此功能已实现但尚未测试，请谨慎使用。
+基于 Spring AI Alibaba Graph Core 实现的工作流编排，支持两种方式：
 
-**目标**：基于 Spring AI Alibaba Graph Core 实现工作流编排
+1. **硬编码工作流**：代码定义，适用于固定流程
+2. **动态工作流**：JSON 配置驱动，用户可自定义（新增功能）
 
-#### 已实现组件
+> 📖 **详细配置指南**：请参阅 [`docs/dynamic-workflow-guide.md`](./docs/dynamic-workflow-guide.md)，包含完整的配置值速查表和 DeepResearch 工作流详解。
 
-- [x] **Graph 工作流核心**
-  - [x] `DeepResearchWorkflow` - 深度研究工作流（问题分解→信息收集→分析→综合→质量检查）
-  - [x] `ResearchState` - 工作流状态管理（AppendStrategy/ReplaceStrategy）
-  - [x] `GraphWorkflowService` - 工作流服务
+---
 
-- [x] **工作流节点**
-  - [x] `QueryDecompositionNode` - 问题分解节点
-  - [x] `InformationGatheringNode` - 信息收集节点
-  - [x] `AnalysisNode` - 分析节点
-  - [x] `SynthesisNode` - 综合节点
-  - [x] `QualityCheckNode` - 质量检查节点（条件路由）
+#### `graph_config` JSON 配置完整说明
 
-- [x] **执行记录**
-  - [x] `GraphTask` - 任务执行记录
-  - [x] `GraphStep` - 步骤执行记录
-  - [x] `GraphWorkflow` - 工作流配置
+`p_graph_workflows` 表的 `graph_config` 字段存储工作流的完整配置，格式如下：
+
+##### 顶层结构
+
+```json
+{
+  "name": "工作流名称",
+  "description": "工作流描述",
+  "version": "1.0.0",
+  "stateConfig": { ... },   // 状态配置
+  "nodes": [ ... ],         // 节点列表
+  "edges": [ ... ]          // 边列表
+}
+```
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `name` | String | ✅ | 工作流名称 |
+| `description` | String | ❌ | 工作流描述 |
+| `version` | String | ❌ | 版本号 |
+| `stateConfig` | Object | ✅ | 状态配置 |
+| `nodes` | Array | ✅ | 节点列表 |
+| `edges` | Array | ✅ | 边列表 |
+
+---
+
+##### stateConfig（状态配置）
+
+定义工作流中使用的状态键及其更新策略。
+
+```json
+{
+  "stateConfig": {
+    "keys": [
+      {"key": "question", "append": false, "description": "用户问题"},
+      {"key": "results", "append": true, "description": "搜索结果（追加模式）"}
+    ]
+  }
+}
+```
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `key` | String | ✅ | 状态键名称 |
+| `append` | Boolean | ✅ | `false`=替换模式（ReplaceStrategy），`true`=追加模式（AppendStrategy） |
+| `description` | String | ❌ | 状态键描述 |
+
+**重要状态键**：
+- `next_node`：用于条件路由，存储下一个节点的决策结果
+- `current_node`：自动记录当前执行的节点 ID
+
+---
+
+##### nodes（节点列表）
+
+每个节点定义一个处理步骤。
+
+```json
+{
+  "nodes": [
+    {
+      "id": "node_id",
+      "type": "LLM_NODE",
+      "name": "节点名称",
+      "description": "节点描述",
+      "config": { ... }
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `id` | String | ✅ | 节点唯一标识（用于边的连接） |
+| `type` | String | ✅ | 节点类型：`LLM_NODE`、`TRANSFORM_NODE`、`CONDITION_NODE` |
+| `name` | String | ❌ | 节点显示名称 |
+| `description` | String | ❌ | 节点描述 |
+| `config` | Object | ✅ | 节点配置（不同类型配置不同） |
+
+---
+
+##### 节点类型详解
+
+**1. LLM_NODE（LLM 调用节点）**
+
+调用语言模型进行文本生成。
+
+```json
+{
+  "id": "analysis",
+  "type": "LLM_NODE",
+  "name": "深度分析",
+  "config": {
+    "input_key": "search_results",
+    "output_key": "analysis_result",
+    "system_prompt": "你是一个分析专家...",
+    "temperature": 0.7,
+    "max_tokens": 2000
+  }
+}
+```
+
+| 配置参数 | 类型 | 必需 | 说明 |
+|---------|------|------|------|
+| `input_key` | String | ✅ | 从状态中读取输入的键名 |
+| `output_key` | String | ✅ | 输出结果存储到状态的键名 |
+| `system_prompt` | String | ❌ | 系统提示词，指导 LLM 行为 |
+| `temperature` | Number | ❌ | 温度参数（0-1），控制输出随机性 |
+| `max_tokens` | Integer | ❌ | 最大生成 token 数 |
+
+---
+
+**2. TRANSFORM_NODE（数据转换节点）**
+
+转换或处理状态数据，不调用 LLM。
+
+```json
+{
+  "id": "parse_score",
+  "type": "TRANSFORM_NODE",
+  "name": "解析评分",
+  "config": {
+    "transform_type": "PARSE_NUMBER",
+    "input_keys": ["score_raw"],
+    "output_key": "score"
+  }
+}
+```
+
+| 配置参数 | 类型 | 必需 | 说明 |
+|---------|------|------|------|
+| `transform_type` | String | ✅ | 转换类型（见下表） |
+| `input_keys` | Array | ✅ | 输入字段列表 |
+| `output_key` | String | ✅ | 输出结果存储到状态的键名 |
+| `delimiter` | String | ❌ | 分隔符（用于 SPLIT 操作） |
+| `threshold` | Number | ❌ | 阈值（用于 THRESHOLD_CHECK） |
+
+**支持的 transform_type**：
+
+| 类型 | 说明 | 输入 | 输出 |
+|------|------|------|------|
+| `MERGE` | 合并多个字段值 | 多个键 | 换行分隔的字符串 |
+| `EXTRACT` | 提取单个字段值 | 1 个键 | 原值 |
+| `FORMAT` | 格式化多字段 | 多个键 | `key: value` 格式字符串 |
+| `SPLIT_LINES` | 按行分割为列表 | 1 个键 | `List<String>` |
+| `PARSE_NUMBER` | 解析数字 | 1 个键 | `Integer`（0-100） |
+| `PARSE_JSON` | 解析 JSON | 1 个键 | `Map` 或 `List` |
+| `THRESHOLD_CHECK` | 阈值检查 | 1 个键 | `"PASS"` 或 `"NEED_IMPROVEMENT"` |
+| `INCREMENT` | 递增数值 | 1 个键 | `Integer`（原值+1） |
+
+---
+
+**3. CONDITION_NODE（条件路由节点）**
+
+根据状态值决定下一步路由。
+
+```json
+{
+  "id": "route_decision",
+  "type": "CONDITION_NODE",
+  "name": "路由决策",
+  "config": {
+    "condition_field": "status",
+    "routes": {
+      "approved": "process_node",
+      "rejected": "reject_node"
+    },
+    "default_route": "END"
+  }
+}
+```
+
+| 配置参数 | 类型 | 必需 | 说明 |
+|---------|------|------|------|
+| `condition_field` | String | ✅ | 条件判断的状态字段名 |
+| `routes` | Object | ✅ | 路由映射：`{值: 目标节点ID}` |
+| `default_route` | String | ❌ | 默认路由（不匹配时），默认 `"END"` |
+
+---
+
+##### edges（边列表）
+
+定义节点之间的连接关系。
+
+```json
+{
+  "edges": [
+    {"from": "START", "to": "node_1", "type": "SIMPLE"},
+    {"from": "node_1", "to": "node_2", "type": "SIMPLE"},
+    {"from": "node_2", "to": null, "type": "CONDITIONAL", "routes": {"PASS": "END", "FAIL": "node_1"}}
+  ]
+}
+```
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `from` | String | ✅ | 源节点 ID（`"START"` 表示起点） |
+| `to` | String | ✅* | 目标节点 ID（`"END"` 表示终点），条件边时可为 `null` |
+| `type` | String | ✅ | 边类型：`SIMPLE`（简单边）或 `CONDITIONAL`（条件边） |
+| `routes` | Object | ❌* | 条件边的路由映射，`type=CONDITIONAL` 时必需 |
+
+**边类型说明**：
+- **SIMPLE**：固定连接，从 `from` 直接到 `to`
+- **CONDITIONAL**：条件路由，根据 `next_node` 状态值决定下一步
+
+---
+
+##### 完整示例：DeepResearch 工作流
+
+```json
+{
+  "name": "DeepResearch",
+  "description": "深度研究工作流",
+  "version": "1.0.0",
+  "stateConfig": {
+    "keys": [
+      {"key": "question", "append": false, "description": "原始问题"},
+      {"key": "sub_questions", "append": false, "description": "分解后的子问题"},
+      {"key": "search_results", "append": true, "description": "搜索结果"},
+      {"key": "analysis_result", "append": false, "description": "分析结果"},
+      {"key": "final_answer", "append": false, "description": "最终报告"},
+      {"key": "quality_score", "append": false, "description": "质量评分"},
+      {"key": "iteration_count", "append": false, "description": "迭代次数"},
+      {"key": "next_node", "append": false, "description": "路由决策"}
+    ]
+  },
+  "nodes": [
+    {
+      "id": "query_decomposition",
+      "type": "LLM_NODE",
+      "name": "问题分解",
+      "config": {
+        "input_key": "question",
+        "output_key": "sub_questions",
+        "system_prompt": "请将问题分解为3-5个子问题...",
+        "temperature": 0.7
+      }
+    },
+    {
+      "id": "information_gathering",
+      "type": "LLM_NODE",
+      "name": "信息收集",
+      "config": {
+        "input_key": "sub_questions",
+        "output_key": "search_results",
+        "system_prompt": "针对每个子问题提供信息..."
+      }
+    },
+    {
+      "id": "analysis",
+      "type": "LLM_NODE",
+      "name": "深度分析",
+      "config": {
+        "input_key": "search_results",
+        "output_key": "analysis_result",
+        "system_prompt": "对信息进行深度分析..."
+      }
+    },
+    {
+      "id": "synthesis",
+      "type": "LLM_NODE",
+      "name": "综合报告",
+      "config": {
+        "input_key": "analysis_result",
+        "output_key": "final_answer",
+        "system_prompt": "撰写研究报告..."
+      }
+    },
+    {
+      "id": "quality_check",
+      "type": "LLM_NODE",
+      "name": "质量评估",
+      "config": {
+        "input_key": "final_answer",
+        "output_key": "quality_score_raw",
+        "system_prompt": "评分0-100，只返回数字"
+      }
+    },
+    {
+      "id": "parse_score",
+      "type": "TRANSFORM_NODE",
+      "name": "解析评分",
+      "config": {
+        "transform_type": "PARSE_NUMBER",
+        "input_keys": ["quality_score_raw"],
+        "output_key": "quality_score"
+      }
+    },
+    {
+      "id": "threshold_check",
+      "type": "TRANSFORM_NODE",
+      "name": "阈值检查",
+      "config": {
+        "transform_type": "THRESHOLD_CHECK",
+        "input_keys": ["quality_score"],
+        "output_key": "next_node",
+        "threshold": 80
+      }
+    }
+  ],
+  "edges": [
+    {"from": "START", "to": "query_decomposition", "type": "SIMPLE"},
+    {"from": "query_decomposition", "to": "information_gathering", "type": "SIMPLE"},
+    {"from": "information_gathering", "to": "analysis", "type": "SIMPLE"},
+    {"from": "analysis", "to": "synthesis", "type": "SIMPLE"},
+    {"from": "synthesis", "to": "quality_check", "type": "SIMPLE"},
+    {"from": "quality_check", "to": "parse_score", "type": "SIMPLE"},
+    {"from": "parse_score", "to": "threshold_check", "type": "SIMPLE"},
+    {"from": "threshold_check", "to": null, "type": "CONDITIONAL", "routes": {
+      "PASS": "END",
+      "NEED_IMPROVEMENT": "analysis"
+    }}
+  ]
+}
+```
+
+**工作流图示**：
+
+```
+START
+  │
+  ▼
+┌─────────────────────┐
+│ query_decomposition │ (LLM_NODE)
+└─────────────────────┘
+  │
+  ▼
+┌─────────────────────┐
+│ information_gathering│ (LLM_NODE)
+└─────────────────────┘
+  │
+  ▼
+┌─────────────────────┐◀────────────────┐
+│     analysis        │ (LLM_NODE)      │
+└─────────────────────┘                 │
+  │                                     │
+  ▼                                     │
+┌─────────────────────┐                 │
+│     synthesis       │ (LLM_NODE)      │
+└─────────────────────┘                 │
+  │                                     │
+  ▼                                     │
+┌─────────────────────┐                 │
+│   quality_check     │ (LLM_NODE)      │
+└─────────────────────┘                 │
+  │                                     │
+  ▼                                     │
+┌─────────────────────┐                 │
+│    parse_score      │ (TRANSFORM)     │
+└─────────────────────┘                 │
+  │                                     │
+  ▼                                     │
+┌─────────────────────┐                 │
+│  threshold_check    │ (TRANSFORM)     │
+└─────────────────────┘                 │
+  │                                     │
+  ├──── PASS ──────▶ END                │
+  │                                     │
+  └── NEED_IMPROVEMENT ─────────────────┘
+```
+
+---
 
 #### API 端点
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `POST /api/graph/research/{modelId}` | POST | 同步执行深度研究 |
-| `GET /api/graph/research/{modelId}/stream` | GET | 流式执行深度研究（SSE） |
-| `POST /api/graph/research/{modelId}/with-progress` | POST | 同步执行（带进度） |
+| `/api/workflow/node-types` | GET | 获取可用节点类型 |
+| `/api/workflow/validate` | POST | 验证工作流配置 |
+| `/api/workflow/execute/{modelId}` | POST | 执行自定义工作流 |
+| `/api/workflow/deep-research/{modelId}` | POST | 执行 DeepResearch |
+
+#### 使用示例
+
+```bash
+# 1. 获取节点类型
+curl http://localhost:8080/api/workflow/node-types
+
+# 2. 执行 DeepResearch
+curl -X POST http://localhost:8080/api/workflow/deep-research/1 \
+  -H "Content-Type: application/json" \
+  -d '{"question": "人工智能的发展历史是什么？"}'
+
+# 3. 执行自定义工作流
+curl -X POST http://localhost:8080/api/workflow/execute/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workflowConfig": "{完整JSON配置}",
+    "initialState": {"question": "你的问题", "iteration_count": 0}
+  }'
+```
+
+---
 
 #### 数据库表
 
 | 表名 | 说明 |
 |------|------|
-| `p_graph_workflows` | 工作流配置表 |
-| `a_graph_tasks` | 任务执行记录表 |
-| `a_graph_steps` | 步骤执行记录表 |
+| `p_graph_workflows` | 工作流配置（`graph_config` 存储上述 JSON） |
+| `p_graph_node_types` | 节点类型注册表（系统内置） |
+| `a_graph_tasks` | 任务执行记录 |
+| `a_graph_steps` | 步骤执行记录 |
+
+---
 
 #### 包结构
 
 ```
 llm-agent/src/main/java/com/llmmanager/agent/graph/
-├── GraphWorkflowService.java      # 工作流服务
-├── workflow/
-│   └── DeepResearchWorkflow.java  # DeepResearch 工作流
-├── node/
-│   ├── QueryDecompositionNode.java
-│   ├── InformationGatheringNode.java
-│   ├── AnalysisNode.java
-│   ├── SynthesisNode.java
-│   └── QualityCheckNode.java
-└── state/
-    └── ResearchState.java         # 状态管理
+├── dynamic/                           # 动态工作流（JSON 配置驱动）
+│   ├── DynamicGraphBuilder.java       # 核心构建器
+│   ├── dto/
+│   │   ├── GraphWorkflowConfig.java   # 工作流配置 DTO
+│   │   ├── NodeConfig.java            # 节点配置
+│   │   ├── EdgeConfig.java            # 边配置
+│   │   └── StateKeyConfig.java        # 状态键配置
+│   └── executor/
+│       ├── NodeExecutor.java          # 节点执行器接口
+│       ├── LlmNodeExecutor.java       # LLM 节点执行器
+│       ├── ConditionNodeExecutor.java # 条件节点执行器
+│       └── TransformNodeExecutor.java # 转换节点执行器
+├── workflow/                          # 硬编码工作流（原有）
+│   └── DeepResearchWorkflow.java
+├── node/                              # 硬编码节点（原有）
+└── state/                             # 状态定义（原有）
 ```
-
-#### 依赖
-
-```xml
-<dependency>
-    <groupId>com.alibaba.cloud.ai</groupId>
-    <artifactId>spring-ai-alibaba-graph-core</artifactId>
-    <version>1.0.0.2</version>
-</dependency>
-```
-
-#### 概念说明
-
-| 概念 | 说明 |
-|------|------|
-| **Graph（工作流）** | 预定义的节点和边，固定流程编排 |
-| **ReactAgent（智能体）** | LLM 自主推理，动态决定下一步（需要 `spring-ai-alibaba-agent-framework`，暂未发布） |
 
 ---
 

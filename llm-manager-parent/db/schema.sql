@@ -292,13 +292,16 @@ CREATE TABLE IF NOT EXISTS p_graph_workflows (
     name VARCHAR(255) NOT NULL COMMENT '工作流名称',
     slug VARCHAR(255) NOT NULL UNIQUE COMMENT '唯一标识（用于URL访问）',
     description TEXT COMMENT '描述',
-    workflow_type VARCHAR(50) NOT NULL DEFAULT 'DEEP_RESEARCH' COMMENT '工作流类型：DEEP_RESEARCH/SEQUENTIAL/PARALLEL/CUSTOM',
+    workflow_type VARCHAR(50) NOT NULL DEFAULT 'CUSTOM' COMMENT '工作流类型：DEEP_RESEARCH/SEQUENTIAL/PARALLEL/CUSTOM',
+    graph_config TEXT COMMENT '工作流配置（JSON 格式：包含 nodes、edges、state_config）',
     llm_model_id BIGINT COMMENT '关联的默认模型ID',
     max_iterations INT DEFAULT 3 COMMENT '最大迭代轮数',
     quality_threshold INT DEFAULT 80 COMMENT '质量评分阈值（达到此分数停止迭代）',
-    enabled_tools JSON COMMENT '启用的工具列表（JSON数组）',
-    mcp_servers JSON COMMENT 'MCP服务器配置（JSON数组）',
+    enabled_tools TEXT COMMENT '启用的工具列表（JSON 数组格式）',
+    mcp_servers TEXT COMMENT 'MCP 服务器配置（JSON 数组格式）',
     system_prompt TEXT COMMENT '系统提示词（定制工作流行为）',
+    status VARCHAR(20) DEFAULT 'DRAFT' COMMENT '状态：DRAFT/PUBLISHED/ARCHIVED',
+    version INT DEFAULT 1 COMMENT '版本号',
     is_active TINYINT(1) DEFAULT 1 COMMENT '是否启用',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -308,9 +311,33 @@ CREATE TABLE IF NOT EXISTS p_graph_workflows (
     INDEX idx_slug (slug),
     INDEX idx_workflow_type (workflow_type),
     INDEX idx_llm_model_id (llm_model_id),
+    INDEX idx_status (status),
     INDEX idx_is_active (is_active),
     INDEX idx_is_delete (is_delete)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Graph工作流配置表';
+
+-- Graph 节点类型表（系统内置节点类型注册）
+CREATE TABLE IF NOT EXISTS p_graph_node_types (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    type_code VARCHAR(50) NOT NULL UNIQUE COMMENT '节点类型代码（如：LLM_NODE, TOOL_NODE）',
+    type_name VARCHAR(100) NOT NULL COMMENT '节点类型名称',
+    description TEXT COMMENT '节点类型描述',
+    config_schema TEXT COMMENT '配置参数 JSON Schema（TEXT 格式）',
+    input_schema TEXT COMMENT '输入参数 JSON Schema（TEXT 格式）',
+    output_schema TEXT COMMENT '输出参数 JSON Schema（TEXT 格式）',
+    executor_bean_name VARCHAR(100) COMMENT 'Spring Bean 名称（执行器类）',
+    is_system TINYINT(1) DEFAULT 1 COMMENT '是否系统内置，1：系统内置，0：用户自定义',
+    is_active TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_type_code (type_code),
+    INDEX idx_is_system (is_system),
+    INDEX idx_is_active (is_active),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Graph节点类型表';
 
 -- Graph 工作流任务执行记录表
 CREATE TABLE IF NOT EXISTS a_graph_tasks (
@@ -329,6 +356,7 @@ CREATE TABLE IF NOT EXISTS a_graph_tasks (
     start_time DATETIME COMMENT '开始时间',
     end_time DATETIME COMMENT '结束时间',
     error_message TEXT COMMENT '错误信息',
+    graph_config_snapshot TEXT COMMENT '执行时的工作流配置快照（JSON 格式）',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
