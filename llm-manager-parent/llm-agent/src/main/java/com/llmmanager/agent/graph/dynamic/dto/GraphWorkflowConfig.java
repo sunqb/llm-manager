@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * Graph 工作流配置 DTO
- * 完整定义一个可执行的工作流
+ * 完整定义一个可执行的工作流，数据库p_graph_workflows的graph_config映射到此类
  */
 @Data
 @Builder
@@ -27,6 +27,11 @@ public class GraphWorkflowConfig {
      * 工作流描述
      */
     private String description;
+
+    /**
+     * 版本号（可选）
+     */
+    private String version;
 
     /**
      * 状态配置：定义所有状态键及其更新策略
@@ -97,17 +102,28 @@ public class GraphWorkflowConfig {
                 .toList();
 
         for (EdgeConfig edge : edges) {
+            // 验证起始节点存在
             if (!"START".equals(edge.getFrom()) && !nodeIds.contains(edge.getFrom())) {
                 throw new IllegalArgumentException("边引用的起始节点不存在: " + edge.getFrom());
             }
 
-            if (!"END".equals(edge.getTo()) && !nodeIds.contains(edge.getTo())) {
-                throw new IllegalArgumentException("边引用的目标节点不存在: " + edge.getTo());
-            }
-
-            // 验证条件边必须有路由映射
-            if (edge.isConditional() && (edge.getRoutes() == null || edge.getRoutes().isEmpty())) {
-                throw new IllegalArgumentException("条件边必须配置路由映射");
+            if (edge.isConditional()) {
+                // 条件边：验证 routes 必须存在且所有目标节点有效
+                if (edge.getRoutes() == null || edge.getRoutes().isEmpty()) {
+                    throw new IllegalArgumentException("条件边必须配置路由映射");
+                }
+                // 验证 routes 中的所有目标节点
+                for (Map.Entry<String, String> route : edge.getRoutes().entrySet()) {
+                    String targetNode = route.getValue();
+                    if (!"END".equals(targetNode) && !nodeIds.contains(targetNode)) {
+                        throw new IllegalArgumentException("条件边路由的目标节点不存在: " + targetNode);
+                    }
+                }
+            } else {
+                // 简单边：验证 to 节点存在
+                if (!"END".equals(edge.getTo()) && !nodeIds.contains(edge.getTo())) {
+                    throw new IllegalArgumentException("边引用的目标节点不存在: " + edge.getTo());
+                }
             }
         }
     }

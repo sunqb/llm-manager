@@ -134,21 +134,55 @@ public class DynamicGraphBuilder {
      * 添加边
      */
     private void addEdge(StateGraph stateGraph, EdgeConfig edgeConfig) throws GraphStateException {
+        // 转换 START/END 字符串为 StateGraph 常量
+        String from = convertNodeId(edgeConfig.getFrom());
+        String to = convertNodeId(edgeConfig.getTo());
+
         log.debug("[DynamicGraphBuilder] 添加边: {} -> {} (类型: {})",
-                edgeConfig.getFrom(), edgeConfig.getTo(), edgeConfig.getType());
+                from, to, edgeConfig.getType());
 
         if (edgeConfig.isSimple()) {
             // 简单边：固定连接
-            stateGraph.addEdge(edgeConfig.getFrom(), edgeConfig.getTo());
+            stateGraph.addEdge(from, to);
         } else if (edgeConfig.isConditional()) {
             // 条件边：从状态中读取 next_node
             AsyncEdgeAction edgeAction = createConditionalEdgeAction(edgeConfig);
             stateGraph.addConditionalEdges(
-                    edgeConfig.getFrom(),
+                    from,
                     edgeAction,
-                    edgeConfig.getRoutes()
+                    convertRoutes(edgeConfig.getRoutes())
             );
         }
+    }
+
+    /**
+     * 转换节点 ID（处理 START/END 特殊值）
+     */
+    private String convertNodeId(String nodeId) {
+        if (nodeId == null) {
+            return null;
+        }
+        if ("START".equals(nodeId)) {
+            return START;
+        }
+        if ("END".equals(nodeId)) {
+            return END;
+        }
+        return nodeId;
+    }
+
+    /**
+     * 转换路由映射中的节点 ID
+     */
+    private Map<String, String> convertRoutes(Map<String, String> routes) {
+        if (routes == null) {
+            return null;
+        }
+        return routes.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey,
+                        e -> convertNodeId(e.getValue())
+                ));
     }
 
     /**

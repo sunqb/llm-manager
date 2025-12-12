@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * 节点配置 DTO
- * 用于定义工作流中的单个节点
+ * 用于定义工作流中的单个节点，数据库的 p_graph_workflows 表的 graph_config 字段中的 nodes 部分映射到此类
  */
 @Data
 @Builder
