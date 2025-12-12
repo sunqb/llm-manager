@@ -80,8 +80,8 @@ public class LlmChatAgent {
     /**
      * 执行同步对话（支持历史）
      */
-    public String chat(ChatRequest request, String conversationId) {
-        ChatClient chatClient = createChatClient(request, conversationId);
+    public String chat(ChatRequest request, String conversationCode) {
+        ChatClient chatClient = createChatClient(request, conversationCode);
         OpenAiChatOptions options = buildOptions(request);
 
         var promptBuilder = chatClient.prompt();
@@ -101,9 +101,9 @@ public class LlmChatAgent {
         ChatResponse response = promptBuilder
                 .options(options)
                 .advisors(advisor -> {
-                    // Memory Advisor 参数
-                    if (conversationId != null) {
-                        advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
+                    // Memory Advisor 参数（使用 conversationCode 作为 Spring AI 的 CONVERSATION_ID）
+                    if (conversationCode != null) {
+                        advisor.param(ChatMemory.CONVERSATION_ID, conversationCode);
                     }
                     // Thinking Advisor 参数
                     addThinkingAdvisorParams(advisor, request);
@@ -138,11 +138,11 @@ public class LlmChatAgent {
      * - 多模态（request.mediaContents）
      * - 思考模式（通过 ThinkingAdvisor 处理，自动将 thinking 参数注入到顶层）
      */
-    public Flux<ChatResponse> stream(ChatRequest request, String conversationId) {
+    public Flux<ChatResponse> stream(ChatRequest request, String conversationCode) {
         // 打印完整的请求参数
-        // logFullRequest(request, conversationId);
+        // logFullRequest(request, conversationCode);
 
-        ChatClient chatClient = createChatClient(request, conversationId);
+        ChatClient chatClient = createChatClient(request, conversationCode);
         OpenAiChatOptions options = buildOptions(request);
 
         // 打印完整的 options
@@ -165,9 +165,9 @@ public class LlmChatAgent {
         return promptBuilder
                 .options(options)
                 .advisors(advisor -> {
-                    // Memory Advisor 参数
-                    if (conversationId != null) {
-                        advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
+                    // Memory Advisor 参数（使用 conversationCode 作为 Spring AI 的 CONVERSATION_ID）
+                    if (conversationCode != null) {
+                        advisor.param(ChatMemory.CONVERSATION_ID, conversationCode);
                     }
                     // Thinking Advisor 参数
                     addThinkingAdvisorParams(advisor, request);
@@ -179,14 +179,14 @@ public class LlmChatAgent {
     /**
      * 打印完整的请求参数
      */
-    private void logFullRequest(ChatRequest request, String conversationId) {
+    private void logFullRequest(ChatRequest request, String conversationCode) {
         log.info("==================== LlmChatAgent 请求参数 ====================");
         log.info("baseUrl: {}", request.getBaseUrl());
         log.info("modelIdentifier: {}", request.getModelIdentifier());
         log.info("temperature: {}", request.getTemperature());
         log.info("thinkingMode: '{}'", request.getThinkingMode());
         log.info("reasoningFormat: {}", request.getReasoningFormat());
-        log.info("conversationId: {}", conversationId);
+        log.info("conversationCode: {}", conversationCode);
         log.info("userMessage: {}", request.getUserMessage() != null ?
                 (request.getUserMessage().length() > 100 ? request.getUserMessage().substring(0, 100) + "..." : request.getUserMessage()) : null);
         log.info("systemPrompt: {}", request.getSystemPrompt() != null ?
@@ -341,27 +341,27 @@ public class LlmChatAgent {
      * Advisor 管理策略：
      * - 全局 Advisor（如 LoggingAdvisor）：通过 AdvisorManager 注册（见 createChatClient(ChatModel)）
      * - 条件 Advisor（如 MemoryAdvisor、ThinkingAdvisor）：按需添加（本方法）
-     *   - MemoryAdvisor：需要 conversationId 时才添加
+     *   - MemoryAdvisor：需要 conversationCode 时才添加
      *   - ThinkingAdvisor：需要 thinkingMode 时才添加
      *
      * 设计理由：
      * - 条件 Advisor 的触发条件是请求级别的，无法在全局注册时判断
-     * - 按需添加避免不必要的性能开销（如无 conversationId 时不查询数据库）
+     * - 按需添加避免不必要的性能开销（如无 conversationCode 时不查询数据库）
      * - 保持 AdvisorManager 简单，不耦合业务参数
      *
      * Advisor 执行顺序（按 order 从小到大）：
      * 1. MemoryAdvisor (order=0) - 处理历史消息
      * 2. ThinkingAdvisor (order=100) - 注入 thinking 参数到 ChatOptions
      */
-    private ChatClient createChatClient(ChatRequest request, String conversationId) {
+    private ChatClient createChatClient(ChatRequest request, String conversationCode) {
         ChatModel chatModel = getOrCreateChatModel(request);
         ChatClient.Builder builder = ChatClient.builder(chatModel);
 
         // 收集需要的 Advisor
         List<Advisor> advisors = new ArrayList<>();
 
-        // 1. MemoryAdvisor（需要 conversationId）
-        if (conversationId != null && memoryAdvisor != null) {
+        // 1. MemoryAdvisor（需要 conversationCode）
+        if (conversationCode != null && memoryAdvisor != null) {
             advisors.add(memoryAdvisor);
         }
 
@@ -454,9 +454,9 @@ public class LlmChatAgent {
         chatModelCache.clear();
     }
 
-    public void clearConversationHistory(String conversationId) {
-        if (chatMemory != null && conversationId != null) {
-            chatMemory.clear(conversationId);
+    public void clearConversationHistory(String conversationCode) {
+        if (chatMemory != null && conversationCode != null) {
+            chatMemory.clear(conversationCode);
         }
     }
 

@@ -82,9 +82,10 @@ public class ChatRequest {
     // ==================== 历史记忆相关 ====================
 
     /**
-     * 会话ID（启用历史对话时必传）
+     * 会话标识（启用历史对话时必传）
+     * 注意：本系统统一使用 conversationCode，Spring AI 内部会将此值作为 conversationId 参数传递
      */
-    private String conversationId;
+    private String conversationCode;
 
     /**
      * 是否启用历史记忆（默认 false）

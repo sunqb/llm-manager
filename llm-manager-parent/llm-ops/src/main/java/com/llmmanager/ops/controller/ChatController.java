@@ -70,9 +70,9 @@ public class ChatController {
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> streamChat(@RequestBody StreamChatRequest request) {
-        log.info("[ChatController] 统一流式对话，modelId: {}, agentSlug: {}, conversationId: {}, " +
+        log.info("[ChatController] 统一流式对话，modelId: {}, agentSlug: {}, conversationCode: {}, " +
                         "enableTools: {}, mediaUrls: {}",
-                request.getModelId(), request.getAgentSlug(), request.getConversationId(),
+                request.getModelId(), request.getAgentSlug(), request.getConversationCode(),
                 request.getEnableTools(),
                 request.getMediaUrls() != null ? request.getMediaUrls().size() : 0);
 
@@ -94,40 +94,40 @@ public class ChatController {
      */
     private Flux<ChatStreamChunk> routeAndExecute(StreamChatRequest request) {
         String message = request.getMessage();
-        String conversationId = request.getConversationId();
+        String conversationCode = request.getConversationCode();
         String thinkingMode = request.getThinkingMode();
         String reasoningFormat = request.getReasoningFormat();
 
         // 1. 智能体对话
         if (StringUtils.hasText(request.getAgentSlug())) {
-            return executeAgentChat(request.getAgentSlug(), message, conversationId, thinkingMode, reasoningFormat);
+            return executeAgentChat(request.getAgentSlug(), message, conversationCode, thinkingMode, reasoningFormat);
         }
 
         Long modelId = request.getModelId();
 
         // 2. 多模态对话
         if (!CollectionUtils.isEmpty(request.getMediaUrls())) {
-            return executeMediaChat(modelId, message, request.getMediaUrls(), conversationId, thinkingMode, reasoningFormat);
+            return executeMediaChat(modelId, message, request.getMediaUrls(), conversationCode, thinkingMode, reasoningFormat);
         }
 
         // 3. 工具调用对话（本地工具或 MCP 工具）
         boolean hasLocalTools = Boolean.TRUE.equals(request.getEnableTools());
         boolean hasMcpTools = Boolean.TRUE.equals(request.getEnableMcpTools());
         if (hasLocalTools || hasMcpTools) {
-            return executionService.streamWithTools(modelId, message, conversationId,
+            return executionService.streamWithTools(modelId, message, conversationCode,
                     hasLocalTools ? request.getToolNames() : null,
                     hasMcpTools, request.getMcpServerCodes(),
                     thinkingMode, reasoningFormat);
         }
 
         // 4. 基础对话（自动支持 reasoning）
-        return executionService.stream(modelId, message, conversationId, thinkingMode, reasoningFormat);
+        return executionService.stream(modelId, message, conversationCode, thinkingMode, reasoningFormat);
     }
 
     /**
      * 智能体对话
      */
-    private Flux<ChatStreamChunk> executeAgentChat(String slug, String message, String conversationId,
+    private Flux<ChatStreamChunk> executeAgentChat(String slug, String message, String conversationCode,
                                                      String thinkingMode, String reasoningFormat) {
         Agent agent = agentService.findBySlug(slug);
         if (agent == null) {
@@ -135,7 +135,7 @@ public class ChatController {
             return Flux.just(ChatStreamChunk.ofContent("智能体不存在: " + slug), ChatStreamChunk.done());
         }
 
-        return executionService.streamWithAgent(agent, message, conversationId, thinkingMode, reasoningFormat)
+        return executionService.streamWithAgent(agent, message, conversationCode, thinkingMode, reasoningFormat)
                 .doOnError(error -> log.error("[ChatController] 智能体对话失败，slug: {}", slug, error));
     }
 
@@ -143,7 +143,7 @@ public class ChatController {
      * 多模态对话
      */
     private Flux<ChatStreamChunk> executeMediaChat(Long modelId, String message,
-                                                    List<String> mediaUrls, String conversationId,
+                                                    List<String> mediaUrls, String conversationCode,
                                                     String thinkingMode, String reasoningFormat) {
         List<String> validUrls = mediaUrls.stream()
                 .filter(StringUtils::hasText)
@@ -159,19 +159,19 @@ public class ChatController {
             mediaContents.add(MediaMessage.MediaContent.ofImageUrl(url));
         }
 
-        return executionService.streamWithMedia(modelId, message, mediaContents, conversationId, thinkingMode, reasoningFormat)
-                .doOnComplete(() -> saveMediaUrls(conversationId, validUrls))
+        return executionService.streamWithMedia(modelId, message, mediaContents, conversationCode, thinkingMode, reasoningFormat)
+                .doOnComplete(() -> saveMediaUrls(conversationCode, validUrls))
                 .doOnError(error -> log.error("[ChatController] 多模态对话失败", error));
     }
 
     /**
      * 保存媒体URL到数据库
      */
-    private void saveMediaUrls(String conversationId, List<String> mediaUrls) {
-        if (conversationId != null && !mediaUrls.isEmpty()) {
+    private void saveMediaUrls(String conversationCode, List<String> mediaUrls) {
+        if (conversationCode != null && !mediaUrls.isEmpty()) {
             try {
-                mediaFileService.saveImageUrlsForLatestUserMessage(conversationId, mediaUrls);
-                log.info("[ChatController] 已保存媒体URL，会话: {}, 数量: {}", conversationId, mediaUrls.size());
+                mediaFileService.saveImageUrlsForLatestUserMessage(conversationCode, mediaUrls);
+                log.info("[ChatController] 已保存媒体URL，会话: {}, 数量: {}", conversationCode, mediaUrls.size());
             } catch (Exception e) {
                 log.error("[ChatController] 保存媒体URL失败: {}", e.getMessage(), e);
             }
@@ -215,12 +215,12 @@ public class ChatController {
     public Map<String, Object> chatWithTools(
             @PathVariable Long modelId,
             @RequestBody String message,
-            @RequestParam(required = false) String conversationId,
+            @RequestParam(required = false) String conversationCode,
             @RequestParam(required = false) List<String> toolNames) {
 
         Map<String, Object> response = new HashMap<>();
         try {
-            String llmResponse = executionService.chatWithTools(modelId, message, conversationId, toolNames);
+            String llmResponse = executionService.chatWithTools(modelId, message, conversationCode, toolNames);
             response.put("success", true);
             response.put("message", llmResponse);
             response.put("toolsUsed", toolNames != null ? toolNames : toolFunctionManager.getAllToolNames());
@@ -240,7 +240,7 @@ public class ChatController {
             @PathVariable Long modelId,
             @RequestParam String message,
             @RequestParam List<String> mediaUrls,
-            @RequestParam(required = false) String conversationId) {
+            @RequestParam(required = false) String conversationCode) {
 
         log.info("[ChatController] 同步多模态对话，模型: {}, 媒体数: {}", modelId, mediaUrls.size());
 
@@ -256,11 +256,11 @@ public class ChatController {
                 mediaContents.add(MediaMessage.MediaContent.ofImageUrl(url));
             }
 
-            String result = executionService.chatWithMedia(modelId, message, mediaContents, conversationId);
+            String result = executionService.chatWithMedia(modelId, message, mediaContents, conversationCode);
             response.put("success", true);
             response.put("message", result);
 
-            saveMediaUrls(conversationId, validUrls);
+            saveMediaUrls(conversationCode, validUrls);
         } catch (Exception e) {
             log.error("[ChatController] 同步多模态对话失败", e);
             response.put("success", false);

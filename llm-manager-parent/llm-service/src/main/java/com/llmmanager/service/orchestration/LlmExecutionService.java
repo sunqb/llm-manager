@@ -64,7 +64,7 @@ public class LlmExecutionService {
     /**
      * 带工具调用的对话
      */
-    public String chatWithTools(Long modelId, String userMessage, String conversationId, List<String> toolNames) {
+    public String chatWithTools(Long modelId, String userMessage, String conversationCode, List<String> toolNames) {
         LlmModel model = getModel(modelId);
         Channel channel = getChannel(model);
         ChatRequest request = buildRequest(channel, model, userMessage, null, model.getTemperature())
@@ -72,7 +72,7 @@ public class LlmExecutionService {
                 .enableTools(true)
                 .toolNames(toolNames)
                 .build();
-        return llmChatAgent.chat(request, conversationId);
+        return llmChatAgent.chat(request, conversationCode);
     }
 
     /**
@@ -80,14 +80,14 @@ public class LlmExecutionService {
      */
     public String chatWithMedia(Long modelId, String userMessage,
                                  List<MediaMessage.MediaContent> mediaContents,
-                                 String conversationId) {
+                                 String conversationCode) {
         LlmModel model = getModel(modelId);
         Channel channel = getChannel(model);
         ChatRequest request = buildRequest(channel, model, userMessage, null, model.getTemperature())
                 .toBuilder()
                 .mediaContents(mediaContents)
                 .build();
-        return llmChatAgent.chat(request, conversationId);
+        return llmChatAgent.chat(request, conversationCode);
     }
 
     /**
@@ -104,57 +104,57 @@ public class LlmExecutionService {
     /**
      * 统一流式对话
      *
-     * @param modelId        模型ID
-     * @param userMessage    用户消息
-     * @param conversationId 会话ID（null 表示不启用历史）
-     * @param thinkingMode   思考模式（enabled/disabled/auto 或 low/medium/high）
-     * @param reasoningFormat Reasoning 参数格式（DOUBAO/OPENAI/DEEPSEEK/AUTO，null 则自动推断）
+     * @param modelId          模型ID
+     * @param userMessage      用户消息
+     * @param conversationCode 会话标识（null 表示不启用历史）
+     * @param thinkingMode     思考模式（enabled/disabled/auto 或 low/medium/high）
+     * @param reasoningFormat  Reasoning 参数格式（DOUBAO/OPENAI/DEEPSEEK/AUTO，null 则自动推断）
      * @return ChatStreamChunk 流（包含 content + reasoning）
      */
-    public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationId,
+    public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationCode,
                                          String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationCode,
                 null, false, null, null, thinkingMode, reasoningFormat);
     }
 
     /**
      * 统一流式对话（自动推断 reasoningFormat）
      */
-    public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationId, String thinkingMode) {
-        return stream(modelId, userMessage, conversationId, thinkingMode, null);
+    public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationCode, String thinkingMode) {
+        return stream(modelId, userMessage, conversationCode, thinkingMode, null);
     }
 
     /**
      * 统一流式对话（简化版）
      */
-    public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationId) {
-        return stream(modelId, userMessage, conversationId, null, null);
+    public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationCode) {
+        return stream(modelId, userMessage, conversationCode, null, null);
     }
 
     /**
      * 智能体流式对话
      */
-    public Flux<ChatStreamChunk> streamWithAgent(Agent agent, String userMessage, String conversationId,
+    public Flux<ChatStreamChunk> streamWithAgent(Agent agent, String userMessage, String conversationCode,
                                                    String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(agent.getLlmModelId());
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
-        return executeStream(model, userMessage, agent.getSystemPrompt(), temp, conversationId,
+        return executeStream(model, userMessage, agent.getSystemPrompt(), temp, conversationCode,
                 null, false, null, null, thinkingMode, reasoningFormat);
     }
 
     /**
      * 智能体流式对话（自动推断 reasoningFormat）
      */
-    public Flux<ChatStreamChunk> streamWithAgent(Agent agent, String userMessage, String conversationId, String thinkingMode) {
-        return streamWithAgent(agent, userMessage, conversationId, thinkingMode, null);
+    public Flux<ChatStreamChunk> streamWithAgent(Agent agent, String userMessage, String conversationCode, String thinkingMode) {
+        return streamWithAgent(agent, userMessage, conversationCode, thinkingMode, null);
     }
 
     /**
      * 智能体流式对话（简化版）
      */
-    public Flux<ChatStreamChunk> streamWithAgent(Agent agent, String userMessage, String conversationId) {
-        return streamWithAgent(agent, userMessage, conversationId, null, null);
+    public Flux<ChatStreamChunk> streamWithAgent(Agent agent, String userMessage, String conversationCode) {
+        return streamWithAgent(agent, userMessage, conversationCode, null, null);
     }
 
     /**
@@ -167,13 +167,13 @@ public class LlmExecutionService {
     /**
      * 智能体同步对话（支持会话历史）
      */
-    public String chatWithAgent(Agent agent, String userMessage, String conversationId) {
+    public String chatWithAgent(Agent agent, String userMessage, String conversationCode) {
         LlmModel model = getModel(agent.getLlmModelId());
         Channel channel = getChannel(model);
         Double temp = agent.getTemperatureOverride() != null ? agent.getTemperatureOverride() : model.getTemperature();
 
         ChatRequest request = buildRequest(channel, model, userMessage, agent.getSystemPrompt(), temp);
-        return llmChatAgent.chat(request, conversationId);
+        return llmChatAgent.chat(request, conversationCode);
     }
 
     /**
@@ -189,11 +189,11 @@ public class LlmExecutionService {
      * 带工具调用的流式对话（支持本地工具和 MCP 工具）
      */
     public Flux<ChatStreamChunk> streamWithTools(Long modelId, String userMessage,
-                                                  String conversationId, List<String> toolNames,
+                                                  String conversationCode, List<String> toolNames,
                                                   boolean enableMcpTools, List<String> mcpServerCodes,
                                                   String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationCode,
                 toolNames, enableMcpTools, mcpServerCodes, null, thinkingMode, reasoningFormat);
     }
 
@@ -201,10 +201,10 @@ public class LlmExecutionService {
      * 带工具调用的流式对话（仅本地工具）
      */
     public Flux<ChatStreamChunk> streamWithTools(Long modelId, String userMessage,
-                                                  String conversationId, List<String> toolNames,
+                                                  String conversationCode, List<String> toolNames,
                                                   String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationCode,
                 toolNames, false, null, null, thinkingMode, reasoningFormat);
     }
 
@@ -212,8 +212,8 @@ public class LlmExecutionService {
      * 带工具调用的流式对话（自动推断 reasoningFormat）
      */
     public Flux<ChatStreamChunk> streamWithTools(Long modelId, String userMessage,
-                                                  String conversationId, List<String> toolNames, String thinkingMode) {
-        return streamWithTools(modelId, userMessage, conversationId, toolNames, thinkingMode, null);
+                                                  String conversationCode, List<String> toolNames, String thinkingMode) {
+        return streamWithTools(modelId, userMessage, conversationCode, toolNames, thinkingMode, null);
     }
 
     /**
@@ -221,9 +221,9 @@ public class LlmExecutionService {
      */
     public Flux<ChatStreamChunk> streamWithMedia(Long modelId, String userMessage,
                                                   List<MediaMessage.MediaContent> mediaContents,
-                                                  String conversationId, String thinkingMode, String reasoningFormat) {
+                                                  String conversationCode, String thinkingMode, String reasoningFormat) {
         LlmModel model = getModel(modelId);
-        return executeStream(model, userMessage, null, model.getTemperature(), conversationId,
+        return executeStream(model, userMessage, null, model.getTemperature(), conversationCode,
                 null, false, null, mediaContents, thinkingMode, reasoningFormat);
     }
 
@@ -232,8 +232,8 @@ public class LlmExecutionService {
      */
     public Flux<ChatStreamChunk> streamWithMedia(Long modelId, String userMessage,
                                                   List<MediaMessage.MediaContent> mediaContents,
-                                                  String conversationId, String thinkingMode) {
-        return streamWithMedia(modelId, userMessage, mediaContents, conversationId, thinkingMode, null);
+                                                  String conversationCode, String thinkingMode) {
+        return streamWithMedia(modelId, userMessage, mediaContents, conversationCode, thinkingMode, null);
     }
 
     // ==================== 内部方法 ====================
@@ -242,7 +242,7 @@ public class LlmExecutionService {
      * 执行流式请求并转换为 ChatStreamChunk
      */
     private Flux<ChatStreamChunk> executeStream(LlmModel model, String userMessage, String systemPrompt,
-                                                 Double temperature, String conversationId,
+                                                 Double temperature, String conversationCode,
                                                  List<String> toolNames,
                                                  boolean enableMcpTools, List<String> mcpServerCodes,
                                                  List<MediaMessage.MediaContent> mediaContents,
@@ -299,10 +299,10 @@ public class LlmExecutionService {
         log.info("[LlmExecutionService] ChatRequest - thinkingMode: '{}', reasoningFormat: {}",
                 request.getThinkingMode(), request.getReasoningFormat());
 
-        String convId = StringUtils.hasText(conversationId) ? conversationId : null;
+        String convCode = StringUtils.hasText(conversationCode) ? conversationCode : null;
 
         // 调用 Agent 层获取 ChatResponse 流，转换为 ChatStreamChunk
-        return llmChatAgent.stream(request, convId)
+        return llmChatAgent.stream(request, convCode)
                 .mapNotNull(this::convertToChunk)
                 .concatWith(Flux.just(ChatStreamChunk.done()));
     }

@@ -1,7 +1,7 @@
 package com.llmmanager.service.orchestration;
 
 import com.llmmanager.agent.dto.ChatRequest;
-import com.llmmanager.agent.graph.GraphWorkflowService;
+import com.llmmanager.agent.graph.GraphWorkflowExecutor;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchProgress;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchResult;
 import com.llmmanager.service.core.entity.Channel;
@@ -32,7 +32,7 @@ public class GraphExecutionService {
     private ChannelService channelService;
 
     @Resource
-    private GraphWorkflowService graphWorkflowService;
+    private GraphWorkflowExecutor graphWorkflowExecutor;
 
     @Value("${spring.ai.openai.api-key:}")
     private String defaultApiKey;
@@ -47,7 +47,7 @@ public class GraphExecutionService {
         log.info("[GraphExecution] 开始深度研究, modelId: {}", modelId);
         
         ChatRequest request = buildChatRequest(modelId);
-        return graphWorkflowService.deepResearch(request, question);
+        return graphWorkflowExecutor.deepResearch(request, question);
     }
 
     /**
@@ -57,7 +57,7 @@ public class GraphExecutionService {
         log.info("[GraphExecution] 开始流式深度研究, modelId: {}", modelId);
         
         ChatRequest request = buildChatRequest(modelId);
-        return graphWorkflowService.deepResearchStream(request, question);
+        return graphWorkflowExecutor.deepResearchStream(request, question);
     }
 
     /**
@@ -68,7 +68,7 @@ public class GraphExecutionService {
         
         // 使用流式方法收集所有进度
         ChatRequest request = buildChatRequest(modelId);
-        return graphWorkflowService.deepResearchStream(request, question)
+        return graphWorkflowExecutor.deepResearchStream(request, question)
                 .collectList()
                 .block();
     }

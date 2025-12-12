@@ -264,25 +264,25 @@ curl -N -X POST http://localhost:8080/api/chat/agents/{slug}/stream \
   -d "你好"
 
 # 智能体流式对话（带会话历史记忆）
-curl -N -X POST "http://localhost:8080/api/chat/agents/{slug}/stream?conversationId=conv-123" \
+curl -N -X POST "http://localhost:8080/api/chat/agents/{slug}/stream?conversationCode=conv-123" \
   -H "Cookie: satoken={token}" \
   -H "Content-Type: text/plain" \
   -d "继续上次的话题"
 
 # 图片对话（通过 URL，流式）
-curl -N -X POST "http://localhost:8080/api/chat/{modelId}/with-image-url?conversationId=conv-123" \
+curl -N -X POST "http://localhost:8080/api/chat/{modelId}/with-image-url?conversationCode=conv-123" \
   -H "Cookie: satoken={token}" \
   -d "message=这张图片里有什么？" \
   -d "imageUrls=https://example.com/image.jpg"
 
 # 图片对话（通过 URL，同步）
-curl -X POST "http://localhost:8080/api/chat/{modelId}/with-image-url/sync?conversationId=conv-123" \
+curl -X POST "http://localhost:8080/api/chat/{modelId}/with-image-url/sync?conversationCode=conv-123" \
   -H "Cookie: satoken={token}" \
   -d "message=描述这张图片" \
   -d "imageUrls=https://example.com/image.jpg"
 
 # 图片对话（文件上传）
-curl -X POST "http://localhost:8080/api/chat/{modelId}/with-image?conversationId=conv-123" \
+curl -X POST "http://localhost:8080/api/chat/{modelId}/with-image?conversationCode=conv-123" \
   -H "Cookie: satoken={token}" \
   -F "message=这是什么？" \
   -F "images=@/path/to/image.png"
@@ -480,7 +480,7 @@ ChatRequest request = ChatRequest.builder()
     .systemPrompt("你是一个有帮助的助手")
     .userMessage("你好")
     // 历史记忆相关参数
-    .conversationId("conversation-123")
+    .conversationCode("conversation-123")
     .enableMemory(true)
     // 高级参数
     .topP(0.9)
@@ -563,16 +563,16 @@ String response = advancedClient.prompt()
 
 ### 参数优先级
 
-当同时传入多个 `conversationId` 时，优先级如下：
+当同时传入多个 `conversationCode` 时，优先级如下：
 
 ```
-方法参数 > ChatRequest.conversationId
+方法参数 > ChatRequest.conversationCode
 ```
 
 示例：
 ```java
 ChatRequest request = ChatRequest.builder()
-    .conversationId("request-id")
+    .conversationCode("request-id")
     .build();
 
 // 实际使用 "param-id"
@@ -593,9 +593,9 @@ public class MybatisChatMemoryRepository implements ChatMemoryRepository {
     private final ChatHistoryMapper chatHistoryMapper;
 
     // 实现 Spring AI 接口
-    void saveAll(String conversationId, List<Message> messages);
-    List<Message> findByConversationId(String conversationId);
-    void deleteByConversationId(String conversationId);
+    void saveAll(String conversationCode, List<Message> messages);
+    List<Message> findByConversationCode(String conversationCode);
+    void deleteByConversationCode(String conversationCode);
     List<String> findConversationIds();
 }
 ```
@@ -614,7 +614,7 @@ public class ChatMemoryManager {
 
     public MessageChatMemoryAdvisor getMemoryAdvisor() { ... }
     public ChatMemory getChatMemory() { ... }
-    public void clearHistory(String conversationId) { ... }
+    public void clearHistory(String conversationCode) { ... }
 }
 ```
 
@@ -626,7 +626,7 @@ public class ChatMemoryManager {
 @TableName("chat_history")  // 位于 storage/core/entity/
 public class ChatHistory {
     private Long id;
-    private String conversationId;
+    private String conversationCode;
     private String messageType;  // SYSTEM/USER/ASSISTANT/TOOL
     private String content;
     private Map<String, Object> metadata;
@@ -640,7 +640,7 @@ MyBatis-Plus Mapper：
 ```java
 @Mapper  // 位于 storage/core/mapper/
 public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
-    List<ChatHistory> selectRecentMessages(@Param("conversationId") String conversationId,
+    List<ChatHistory> selectRecentMessages(@Param("conversationCode") String conversationCode,
                                             @Param("limit") int limit);
 }
 ```
@@ -653,8 +653,8 @@ public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
 @Component  // 位于 agent/
 public class LlmChatAgent {
     // 封装的简单 API
-    public String chat(ChatRequest request, String conversationId);
-    public Flux<String> streamChat(ChatRequest request, String conversationId);
+    public String chat(ChatRequest request, String conversationCode);
+    public Flux<String> streamChat(ChatRequest request, String conversationCode);
 
     // Spring AI 原生 API
     public ChatClient createChatClient(ChatModel chatModel);
@@ -669,7 +669,7 @@ public class LlmChatAgent {
 
 请求参数封装，支持历史记忆和高级参数：
 
-- `conversationId`: 会话ID
+- `conversationCode`: 会话标识（32位UUID，无连字符）
 - `enableMemory`: 是否启用历史记忆
 - `topP`, `maxTokens`, `frequencyPenalty`, `presencePenalty`: 模型参数
 
@@ -855,7 +855,7 @@ CREATE TABLE chat_history (
 ```
 
 **5. LlmChatAgent 重构**
-- 支持 `conversationId` 参数启用历史对话
+- 支持 `conversationCode` 参数启用历史对话
 - 自动加载历史消息
 - 自动保存用户消息和助手回复
 - 流式对话支持历史聚合
@@ -1870,17 +1870,20 @@ llm-agent/src/main/java/com/llmmanager/agent/graph/
 ├── workflow/                          # 硬编码工作流（原有）
 │   └── DeepResearchWorkflow.java
 ├── node/                              # 硬编码节点（原有）
-└── state/                             # 状态定义（原有）
+├── state/                             # 状态定义（原有）
+└── core/                              # 工作流存储层（v2.5.0 迁移）
+    ├── entity/GraphWorkflow.java      # 工作流实体
+    ├── mapper/GraphWorkflowMapper.java
+    └── service/
+        ├── GraphWorkflowService.java       # CRUD 服务
+        └── GraphWorkflowExecutor.java      # 执行器
 
 llm-agent/src/main/resources/
 └── workflows/
     └── deep-research.json             # DeepResearch 配置示例
 
-llm-service/src/main/java/com/llmmanager/service/graph/
-└── DynamicWorkflowExecutionService.java  # 执行服务
-
 llm-ops/src/main/java/com/llmmanager/ops/controller/
-└── DynamicWorkflowController.java     # REST API
+└── GraphWorkflowController.java       # 统一工作流 REST API（合并了 DynamicWorkflowController）
 ```
 
 #### 概念区分

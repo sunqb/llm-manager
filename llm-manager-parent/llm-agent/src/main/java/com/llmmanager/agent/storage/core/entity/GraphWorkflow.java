@@ -1,4 +1,4 @@
-package com.llmmanager.service.core.entity;
+package com.llmmanager.agent.storage.core.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -76,6 +76,13 @@ public class GraphWorkflow extends BaseEntity {
      * 系统提示词（定制工作流行为）
      */
     private String systemPrompt;
+
+    /**
+     * 工作流配置（完整的 JSON 配置，包含节点、边等）
+     * 格式参考 GraphWorkflowConfig DTO
+     */
+    @TableField("graph_config")
+    private String graphConfig;
 
     /**
      * 是否启用

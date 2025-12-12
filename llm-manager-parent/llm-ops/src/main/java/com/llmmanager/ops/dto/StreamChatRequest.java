@@ -34,9 +34,10 @@ public class StreamChatRequest {
     private String agentSlug;
 
     /**
-     * 会话ID（可选，用于连续对话）
+     * 会话标识（可选，用于连续对话）
+     * 注意：本系统统一使用 conversationCode
      */
-    private String conversationId;
+    private String conversationCode;
 
     /**
      * 是否启用本地工具调用（默认 false）

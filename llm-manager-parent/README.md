@@ -2085,6 +2085,112 @@ set JAVA_HOME=C:\path\to\jdk-21
 java -version
 ```
 
+## 📝 更新日志
+
+### v2.5.0 (2024-12-12) - 架构重构与命名规范化
+
+#### 🔄 重大变更
+
+**1. GraphWorkflow 模块重构**
+- **迁移到 llm-agent 模块**：将 GraphWorkflow 相关类从 `llm-service` 迁移到 `llm-agent`，更符合职责划分
+- **重命名 GraphWorkflowService → GraphWorkflowExecutor**：避免与 `llm-service` 模块的命名冲突，明确执行器职责
+- **合并 Controller**：将 `DynamicWorkflowController` 合并到 `GraphWorkflowController`，统一工作流 API 入口
+- **数据库驱动执行**：通用工作流执行改为基于 `slug` 从数据库读取配置，支持动态管理工作流
+
+**2. 命名规范化（conversationCode）**
+- **统一会话标识**：系统全面使用 `conversationCode` 代替 `conversationId`
+- **API 参数变更**：所有 Controller 层参数从 `conversationId` 更名为 `conversationCode`
+- **Service 层更新**：`LlmExecutionService` 所有方法参数统一使用 `conversationCode`
+- **Spring AI 兼容**：Agent 层使用 `conversationCode` 值传递给 Spring AI 的 `ChatMemory.CONVERSATION_ID` 常量
+
+**3. 新增 DTO**
+- **WorkflowExecuteRequest**：统一工作流执行请求参数（`slug`、`initialState`、`conversationCode`）
+
+#### 📁 文件结构变更
+
+```
+迁移前（llm-service）:
+llm-service/src/main/java/com/llmmanager/service/graph/
+├── GraphWorkflowService.java
+└── GraphWorkflowExecutionService.java
+
+迁移后（llm-agent）:
+llm-agent/src/main/java/com/llmmanager/agent/graph/
+├── core/
+│   ├── entity/GraphWorkflow.java      # 工作流实体
+│   ├── mapper/GraphWorkflowMapper.java
+│   └── service/
+│       ├── GraphWorkflowService.java       # CRUD 服务
+│       └── GraphWorkflowExecutor.java      # 执行器（原 Service）
+└── dynamic/
+    └── dto/WorkflowExecuteRequest.java     # 执行请求 DTO
+```
+
+#### 🔧 API 变更
+
+| 端点 | 变更 |
+|------|------|
+| `POST /api/workflow/execute/{slug}` | 从 `workflowConfig` 参数改为通过 `slug` 从数据库读取配置 |
+| 所有对话接口 | 参数 `conversationId` → `conversationCode` |
+
+#### ⚠️ 迁移说明
+
+1. **前端调整**：将请求参数中的 `conversationId` 改为 `conversationCode`
+2. **数据库兼容**：数据库字段名已是 `conversation_code`，无需修改
+
+---
+
+### v2.4.0 (2024-12-11) - Graph 工作流动态配置
+
+- ✅ 支持 JSON 配置驱动的动态工作流
+- ✅ 实现 LLM_NODE、TRANSFORM_NODE、CONDITION_NODE 三种节点类型
+- ✅ 添加 DeepResearch 工作流示例
+- ✅ 完善工作流配置文档
+
+---
+
+### v2.3.0 (2024-12-10) - Graph 工作流基础
+
+- ✅ 集成 `spring-ai-alibaba-graph-core:1.0.0.2`
+- ✅ 实现硬编码工作流支持
+- ✅ 添加 StateGraph 状态管理
+
+---
+
+### v2.2.0 - MCP 支持
+
+- ✅ MCP 服务器管理（SSE、Streamable HTTP）
+- ✅ MCP 客户端自动初始化
+- ✅ LlmChatAgent 集成 MCP 工具
+
+---
+
+### v2.1.0 - 多模态与思考模式
+
+- ✅ 多模态对话支持（图片 URL、文件上传）
+- ✅ 媒体文件存储（`a_media_files` 表）
+- ✅ Thinking 模式支持（豆包、OpenAI o1）
+- ✅ ThinkingChatModel 突破 Spring AI extraBody 限制
+
+---
+
+### v2.0.0 - 工具调用与历史对话
+
+- ✅ Spring AI 原生 @Tool 注解工具调用
+- ✅ ToolFunctionManager 工具自动发现
+- ✅ ChatMemory 历史对话持久化
+- ✅ 按需启用历史对话（性能优化）
+
+---
+
+### v1.0.0 - 基础架构
+
+- ✅ 多模块 Maven 架构
+- ✅ Spring AI OpenAI 集成
+- ✅ MyBatis-Plus ORM
+- ✅ Channel/Model/Agent 管理
+- ✅ Sa-Token 认证
+
 ## 📄 许可证
 
 本项目采用 MIT 许可证。

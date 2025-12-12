@@ -55,7 +55,7 @@ public class ExternalChatController {
             @RequestBody Map<String, String> payload) {
 
         String userMessage = payload.get("message");
-        String conversationId = payload.get("conversationId");
+        String conversationCode = payload.get("conversationCode");
 
         // 参数校验
         if (!StringUtils.hasText(userMessage)) {
@@ -70,8 +70,8 @@ public class ExternalChatController {
         }
 
         try {
-            log.info("[ExternalChatController] 同步对话，agent: {}, conversationId: {}", slug, conversationId);
-            String response = executionService.chatWithAgent(agent, userMessage, conversationId);
+            log.info("[ExternalChatController] 同步对话，agent: {}, conversationCode: {}", slug, conversationCode);
+            String response = executionService.chatWithAgent(agent, userMessage, conversationCode);
             return Map.of("success", true, "response", response);
         } catch (Exception e) {
             log.error("[ExternalChatController] 同步对话失败，agent: {}", slug, e);
@@ -85,7 +85,7 @@ public class ExternalChatController {
      * 流式对话接口（Flux 输出）
      *
      * @param slug    智能体标识
-     * @param payload 请求体，包含 message 和可选的 conversationId
+     * @param payload 请求体，包含 message 和可选的 conversationCode
      * @return SSE 流式响应
      */
     @PostMapping(value = "/agents/{slug}/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -94,7 +94,7 @@ public class ExternalChatController {
             @RequestBody Map<String, String> payload) {
 
         String userMessage = payload.get("message");
-        String conversationId = payload.get("conversationId");
+        String conversationCode = payload.get("conversationCode");
         String thinkingMode = payload.get("thinkingMode");
         String reasoningFormat = payload.get("reasoningFormat");
 
@@ -110,12 +110,12 @@ public class ExternalChatController {
             return errorResponse("Agent not found: " + slug);
         }
 
-        log.info("[ExternalChatController] 流式对话，agent: {}, conversationId: {}, thinkingMode: {}",
-                slug, conversationId, thinkingMode);
+        log.info("[ExternalChatController] 流式对话，agent: {}, conversationCode: {}, thinkingMode: {}",
+                slug, conversationCode, thinkingMode);
 
         // 调用 Service 层，返回 ChatStreamChunk 流
         Flux<ChatStreamChunk> chunkFlux = executionService.streamWithAgent(
-                agent, userMessage, conversationId, thinkingMode, reasoningFormat
+                agent, userMessage, conversationCode, thinkingMode, reasoningFormat
         ).doOnError(error -> log.error("[ExternalChatController] 流式对话失败，agent: {}", slug, error));
 
         // 使用统一的格式化器转换为 SSE

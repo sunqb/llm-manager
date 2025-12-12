@@ -15,12 +15,15 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Graph 工作流服务
- * 提供 DeepResearch 等高级工作流功能
+ * Graph 工作流执行器
+ * 提供 DeepResearch 等高级工作流的执行能力
+ *
+ * 职责：业务编排层 - 执行工作流
+ * 区别于 storage.core.service.GraphWorkflowService（数据访问层 - CRUD）
  */
 @Slf4j
 @Service
-public class GraphWorkflowService {
+public class GraphWorkflowExecutor {
 
     private final Map<String, DeepResearchWorkflow> workflowCache = new ConcurrentHashMap<>();
 
