@@ -7,6 +7,7 @@ import com.llmmanager.agent.dto.ChatRequest;
 import com.llmmanager.agent.mcp.McpClientManager;
 import com.llmmanager.agent.message.MediaMessage;
 import com.llmmanager.agent.model.ThinkingChatModel;
+import com.llmmanager.agent.rag.RagAdvisorBuilder;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -64,6 +65,9 @@ public class LlmChatAgent {
 
     @Autowired(required = false)
     private ThinkingAdvisor thinkingAdvisor;
+
+    @Autowired(required = false)
+    private RagAdvisorBuilder ragAdvisorBuilder;
 
     // 缓存 ChatModel 实例
     private static final Map<String, ChatModel> chatModelCache = new ConcurrentHashMap<>();
@@ -340,9 +344,10 @@ public class LlmChatAgent {
      *
      * Advisor 管理策略：
      * - 全局 Advisor（如 LoggingAdvisor）：通过 AdvisorManager 注册（见 createChatClient(ChatModel)）
-     * - 条件 Advisor（如 MemoryAdvisor、ThinkingAdvisor）：按需添加（本方法）
+     * - 条件 Advisor（如 MemoryAdvisor、ThinkingAdvisor、RagAdvisor）：按需添加（本方法）
      *   - MemoryAdvisor：需要 conversationCode 时才添加
      *   - ThinkingAdvisor：需要 thinkingMode 时才添加
+     *   - RagAdvisor：需要 enableRag=true 时才添加
      *
      * 设计理由：
      * - 条件 Advisor 的触发条件是请求级别的，无法在全局注册时判断
@@ -351,7 +356,8 @@ public class LlmChatAgent {
      *
      * Advisor 执行顺序（按 order 从小到大）：
      * 1. MemoryAdvisor (order=0) - 处理历史消息
-     * 2. ThinkingAdvisor (order=100) - 注入 thinking 参数到 ChatOptions
+     * 2. RagAdvisor (order=50) - 检索增强
+     * 3. ThinkingAdvisor (order=100) - 注入 thinking 参数到 ChatOptions
      */
     private ChatClient createChatClient(ChatRequest request, String conversationCode) {
         ChatModel chatModel = getOrCreateChatModel(request);
@@ -365,7 +371,16 @@ public class LlmChatAgent {
             advisors.add(memoryAdvisor);
         }
 
-        // 2. ThinkingAdvisor（需要 thinkingMode）
+        // 2. RagAdvisor（需要 enableRag=true）
+        if (Boolean.TRUE.equals(request.getEnableRag()) && ragAdvisorBuilder != null) {
+            Advisor ragAdvisor = buildRagAdvisor(request);
+            if (ragAdvisor != null) {
+                advisors.add(ragAdvisor);
+                log.info("[LlmChatAgent] 启用 RAG Advisor, kbCodes: {}", request.getRagKbCodes());
+            }
+        }
+
+        // 3. ThinkingAdvisor（需要 thinkingMode）
         if (thinkingAdvisor != null && StringUtils.hasText(request.getThinkingMode())
                 && !"auto".equalsIgnoreCase(request.getThinkingMode())) {
             advisors.add(thinkingAdvisor);
@@ -377,6 +392,33 @@ public class LlmChatAgent {
         }
 
         return builder.build();
+    }
+
+    /**
+     * 构建 RAG Advisor
+     */
+    private Advisor buildRagAdvisor(ChatRequest request) {
+        List<String> kbCodes = request.getRagKbCodes();
+        Integer topK = request.getRagTopK();
+        Double similarityThreshold = request.getRagSimilarityThreshold();
+
+        if (kbCodes != null && !kbCodes.isEmpty()) {
+            // 使用指定的知识库
+            if (kbCodes.size() == 1) {
+                // 单个知识库
+                if (request.getRagFilterMetadata() != null && !request.getRagFilterMetadata().isEmpty()) {
+                    return ragAdvisorBuilder.buildAdvisorWithMetadata(kbCodes.get(0), request.getRagFilterMetadata());
+                } else {
+                    return ragAdvisorBuilder.buildAdvisor(kbCodes.get(0), topK, similarityThreshold);
+                }
+            } else {
+                // 多个知识库
+                return ragAdvisorBuilder.buildMultiKbAdvisor(kbCodes, topK);
+            }
+        } else {
+            // 使用全局知识库
+            return ragAdvisorBuilder.buildGlobalAdvisor(topK, null);
+        }
     }
 
     /**

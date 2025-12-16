@@ -116,6 +116,33 @@ llm:
     request-timeout: 30
     auto-initialize: true
     client-type: SYNC
+  rag:
+    enabled: true
+    embedding:
+      # Embedding API 配置（可选，默认使用 spring.ai.openai 配置）
+      # base-url: https://api.openai.com    # 或 Ollama: http://localhost:11434
+      # api-key: sk-xxx
+      model: text-embedding-3-small         # Ollama 可用: nomic-embed-text, bge-m3
+      dimensions: 1536                       # nomic-embed-text: 768, bge-m3: 1024
+    vector-store:
+      type: simple                           # simple | milvus
+      # === Simple VectorStore 配置（内存 + 文件持久化）===
+      persist-path: ./data/vectorstore
+      top-k: 5
+      similarity-threshold: 0.5
+      # === Milvus 配置（使用时将 type 改为 milvus）===
+      # milvus-host: localhost
+      # milvus-port: 19530
+      # milvus-username:                     # 可选
+      # milvus-password:                     # 可选
+      # milvus-database: default
+      # milvus-collection-prefix: llm_kb_    # 每个知识库自动添加 kbCode 后缀
+      # milvus-index-type: IVF_FLAT          # IVF_FLAT | HNSW | AUTOINDEX
+      # milvus-metric-type: COSINE           # COSINE | L2 | IP
+    splitter:
+      chunk-size: 1000
+      chunk-overlap: 200
+      min-chunk-size: 100
 
 # 调试 HTTP 请求日志（查看发送给 LLM 的请求体）
 logging:

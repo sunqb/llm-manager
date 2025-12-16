@@ -118,6 +118,27 @@
                 <artifactId>spring-ai-alibaba-graph-core</artifactId>
                 <version>${spring-ai-alibaba.version}</version>
             </dependency>
+
+            <!-- Spring AI Vector Store Advisors (for RAG) -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-advisors-vector-store</artifactId>
+                <version>${spring-ai.version}</version>
+            </dependency>
+
+            <!-- Spring AI Vector Store (includes SimpleVectorStore) -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-vector-store</artifactId>
+                <version>${spring-ai.version}</version>
+            </dependency>
+
+            <!-- Spring AI Tika Document Reader (for parsing documents) -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-tika-document-reader</artifactId>
+                <version>${spring-ai.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

@@ -42,6 +42,18 @@
             <artifactId>spring-ai-alibaba-graph-core</artifactId>
         </dependency>
 
+        <!-- Spring AI Vector Store Advisors (for RAG) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-advisors-vector-store</artifactId>
+        </dependency>
+
+        <!-- Spring AI Vector Store (includes SimpleVectorStore) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-vector-store</artifactId>
+        </dependency>
+
         <!-- Gson (required by spring-ai-alibaba-graph-core) -->
         <dependency>
             <groupId>com.google.code.gson</groupId>

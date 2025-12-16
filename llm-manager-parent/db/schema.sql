@@ -401,3 +401,70 @@ CREATE TABLE IF NOT EXISTS a_graph_steps (
 -- =============================================
 -- 初始化数据请查看 initdata.sql
 -- =============================================
+
+-- =============================================
+-- RAG 知识库相关表
+-- =============================================
+
+-- 知识库表
+CREATE TABLE IF NOT EXISTS a_knowledge_bases (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    kb_code VARCHAR(32) NOT NULL UNIQUE COMMENT '知识库唯一标识（32位UUID）',
+    name VARCHAR(255) NOT NULL COMMENT '知识库名称',
+    description TEXT COMMENT '知识库描述',
+    kb_type VARCHAR(50) DEFAULT 'GENERAL' COMMENT '知识库类型：GENERAL/FAQ/PRODUCT/CUSTOM',
+    embedding_model VARCHAR(100) DEFAULT 'text-embedding-3-small' COMMENT 'Embedding 模型名称',
+    embedding_dimensions INT DEFAULT 1536 COMMENT '向量维度',
+    channel_id BIGINT COMMENT '关联的 Channel ID（用于 Embedding API 调用）',
+    document_count INT DEFAULT 0 COMMENT '文档数量',
+    vector_count INT DEFAULT 0 COMMENT '向量数量（文档分割后的块数量）',
+    is_public TINYINT(1) DEFAULT 0 COMMENT '是否公开（1：公开，0：私有）',
+    enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用（1：启用，0：禁用）',
+    metadata JSON COMMENT '元数据（JSON 格式）',
+    sort_order INT DEFAULT 0 COMMENT '排序权重（越小越靠前）',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_kb_code (kb_code),
+    INDEX idx_kb_type (kb_type),
+    INDEX idx_enabled (enabled),
+    INDEX idx_is_public (is_public),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库表';
+
+-- 知识库文档表
+CREATE TABLE IF NOT EXISTS a_knowledge_documents (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    doc_code VARCHAR(32) NOT NULL UNIQUE COMMENT '文档唯一标识（32位UUID）',
+    kb_code VARCHAR(32) NOT NULL COMMENT '关联的知识库 Code',
+    title VARCHAR(500) COMMENT '文档标题',
+    doc_type VARCHAR(20) DEFAULT 'TEXT' COMMENT '文档类型：TEXT/MARKDOWN/PDF/DOCX/HTML/JSON/URL',
+    file_name VARCHAR(255) COMMENT '原始文件名',
+    file_size BIGINT COMMENT '文件大小（字节）',
+    mime_type VARCHAR(100) COMMENT '文件 MIME 类型',
+    file_path VARCHAR(500) COMMENT '文件存储路径',
+    content MEDIUMTEXT COMMENT '原始内容（小文件或文本内容直接存储）',
+    content_hash VARCHAR(64) COMMENT '内容哈希（用于去重）',
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '处理状态：PENDING/PROCESSING/COMPLETED/FAILED',
+    error_message TEXT COMMENT '错误信息',
+    chunk_count INT DEFAULT 0 COMMENT '分割后的块数量',
+    char_count INT DEFAULT 0 COMMENT '字符数',
+    source_url VARCHAR(500) COMMENT '文档来源 URL',
+    metadata JSON COMMENT '元数据（JSON 格式）',
+    enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用（1：启用，0：禁用）',
+    sort_order INT DEFAULT 0 COMMENT '排序权重',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_doc_code (doc_code),
+    INDEX idx_kb_code (kb_code),
+    INDEX idx_doc_type (doc_type),
+    INDEX idx_status (status),
+    INDEX idx_content_hash (content_hash),
+    INDEX idx_enabled (enabled),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档表';

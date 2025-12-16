@@ -72,7 +72,22 @@
       "WebFetch(domain:platform.openai.com)",
       "mcp__auggie-mcp__codebase-retrieval",
       "Bash(jar xf:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(llm-agent/src/main/java/com/llmmanager/agent/graph/GraphWorkflowExecutor.java )",
+      "Bash(llm-agent/src/main/java/com/llmmanager/agent/storage/core/entity/GraphWorkflow.java )",
+      "Bash(llm-agent/src/main/java/com/llmmanager/agent/storage/core/mapper/GraphWorkflowMapper.java )",
+      "Bash(llm-agent/src/main/java/com/llmmanager/agent/storage/core/service/GraphWorkflowService.java )",
+      "Bash(llm-openapi/src/main/java/com/llmmanager/openapi/controller/ExternalChatController.java )",
+      "Bash(llm-openapi/src/main/java/com/llmmanager/openapi/controller/ExternalGraphWorkflowController.java )",
+      "Bash(llm-ops/src/main/java/com/llmmanager/ops/controller/GraphWorkflowController.java )",
+      "Bash(llm-ops/src/main/java/com/llmmanager/ops/dto/StreamChatRequest.java )",
+      "Bash(llm-ops/src/main/java/com/llmmanager/ops/dto/WorkflowExecuteRequest.java )",
+      "Bash(llm-service/src/main/java/com/llmmanager/service/orchestration/GraphExecutionService.java )",
+      "Bash(llm-service/src/main/java/com/llmmanager/service/orchestration/LlmExecutionService.java)",
+      "Bash(llm-ops/src/main/java/com/llmmanager/ops/controller/DynamicWorkflowController.java )",
+      "Bash(llm-service/src/main/java/com/llmmanager/service/core/entity/GraphWorkflow.java )",
+      "Bash(llm-service/src/main/java/com/llmmanager/service/core/mapper/GraphWorkflowMapper.java)"
     ],
     "deny": [],
     "ask": []

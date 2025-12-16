@@ -134,6 +134,35 @@ public class ChatRequest {
     @Builder.Default
     private Integer maxToolRounds = 5;
 
+    // ==================== RAG 相关 ====================
+
+    /**
+     * 是否启用 RAG（检索增强生成）
+     */
+    @Builder.Default
+    private Boolean enableRag = false;
+
+    /**
+     * RAG 知识库 Code 列表（null 使用全局知识库）
+     */
+    private java.util.List<String> ragKbCodes;
+
+    /**
+     * RAG 返回的最大文档数量（null 使用默认值）
+     */
+    private Integer ragTopK;
+
+    /**
+     * RAG 相似度阈值（null 使用默认值）
+     */
+    private Double ragSimilarityThreshold;
+
+    /**
+     * RAG 元数据过滤条件
+     * 用于过滤检索结果，如 {"author": "张三", "category": "技术文档"}
+     */
+    private java.util.Map<String, Object> ragFilterMetadata;
+
     // ==================== 其他参数 ====================
 
     /**

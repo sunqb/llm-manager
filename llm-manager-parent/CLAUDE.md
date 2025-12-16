@@ -1215,30 +1215,328 @@ String response = llmChatAgent.chat(request);
 
 ---
 
-### 阶段 4.5：Vector Store（RAG 支持）🔲 待实现
+### 阶段 4.5：Vector Store（RAG 支持）✅ 已完成（⚠️ 未测试）
+
+> **注意**：本阶段代码已完成，但尚未进行完整测试。下一任务将测试此功能。
 
 #### 目标
-- 添加 Vector Store 支持
-- 实现 RAG（检索增强生成）
+- ✅ 添加 Vector Store 支持（基于 Spring AI SimpleVectorStore）
+- ✅ 实现 RAG（检索增强生成）
+- ✅ 创建知识库管理功能
+- ✅ 集成 RetrievalAugmentationAdvisor
+- ✅ Embedding 配置独立化（支持自定义 baseUrl/apiKey）
+- ⏳ Milvus 向量数据库支持（骨架已完成，待实现）
 
-#### 待实现组件
+#### 待完成功能（TODO）
 
-**1. Vector Store 抽象**
+| 功能 | 说明 | 位置 |
+|------|------|------|
+| **URL 文档解析** | 实现网页内容抓取，支持 URL 类型文档 | `DocumentProcessor.java:147` |
+| **文件解析（PDF/DOCX/HTML）** | 集成文档解析库（如 Tika），支持富文本文件 | `DocumentProcessor.java:154` |
+| **Milvus 实现** | 完成 Milvus VectorStore 集成 | `VectorStoreManager.java:292` |
+
+**实现建议**：
+- URL 解析：可使用 Jsoup 或 Spring AI 的 `WebDocumentReader`
+- 文件解析：可重新引入 `spring-ai-tika-document-reader` 依赖，或使用 Apache POI（Office 文档）+ PDFBox（PDF）
+- Milvus：添加 `spring-ai-milvus-store` 依赖
+
+#### 技术选型
+
+| 组件 | 选择 | 说明 |
+|------|------|------|
+| **VectorStore** | SimpleVectorStore / Milvus | 内存+文件 或 向量数据库 |
+| **EmbeddingModel** | OpenAiEmbeddingModel | 支持自定义 API（Ollama 等） |
+| **DocumentSplitter** | TokenTextSplitter | 基于 Token 的分块策略 |
+| **RAG Advisor** | RetrievalAugmentationAdvisor | Spring AI 官方 RAG Advisor |
+
+#### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── rag/                                  # RAG 模块
+│   ├── config/
+│   │   ├── RagConfig.java               # RAG Bean 配置
+│   │   └── RagProperties.java           # 配置属性类
+│   ├── VectorStoreManager.java          # VectorStore 管理器
+│   ├── DocumentProcessor.java           # 文档处理器
+│   └── RagAdvisorBuilder.java           # RAG Advisor 构建器
+├── storage/core/
+│   ├── entity/
+│   │   ├── KnowledgeBase.java           # 知识库实体
+│   │   └── KnowledgeDocument.java       # 文档实体
+│   ├── mapper/
+│   │   ├── KnowledgeBaseMapper.java
+│   │   └── KnowledgeDocumentMapper.java
+│   └── service/
+│       ├── KnowledgeBaseService.java
+│       └── KnowledgeDocumentService.java
+```
+
+#### 配置方式
+
+```yaml
+llm:
+  rag:
+    enabled: true
+    embedding:
+      # Embedding API 配置（可选，默认使用 spring.ai.openai 配置）
+      # base-url: https://api.openai.com    # 或 Ollama: http://localhost:11434
+      # api-key: sk-xxx
+      model: text-embedding-3-small         # Ollama 可用: nomic-embed-text, bge-m3
+      dimensions: 1536                       # nomic-embed-text: 768, bge-m3: 1024
+    vector-store:
+      type: simple                           # simple | milvus
+      # === Simple VectorStore 配置 ===
+      persist-path: ./data/vectorstore
+      top-k: 5
+      similarity-threshold: 0.5
+      # === Milvus 配置（type=milvus 时启用）===
+      # milvus-host: localhost
+      # milvus-port: 19530
+      # milvus-database: default
+      # milvus-collection-prefix: llm_kb_
+      # milvus-index-type: IVF_FLAT
+      # milvus-metric-type: COSINE
+    splitter:
+      chunk-size: 1000
+      chunk-overlap: 200
+      min-chunk-size: 100
+```
+
+#### 核心组件
+
+**1. VectorStoreManager - 向量存储管理器**
+
 ```java
-public interface VectorStore {
-    void addDocuments(List<Document> documents);
-    List<Document> similaritySearch(String query, int k);
-    void deleteDocuments(List<String> ids);
+@Slf4j
+@Component
+public class VectorStoreManager {
+    // 每个知识库一个 VectorStore 实例
+    private final Map<String, VectorStore> vectorStores = new ConcurrentHashMap<>();
+
+    // 获取或创建 VectorStore
+    public VectorStore getOrCreateVectorStore(String kbCode);
+
+    // 添加文档到知识库
+    public void addDocuments(String kbCode, List<Document> documents);
+
+    // 相似性搜索（单个知识库）
+    public List<Document> similaritySearch(String kbCode, String query, int topK);
+
+    // 全局搜索（所有启用的知识库）
+    public List<Document> similaritySearchGlobal(String query, int topK);
+
+    // 删除文档
+    public void deleteDocuments(String kbCode, List<String> documentIds);
+
+    // 清空知识库
+    public void clearVectorStore(String kbCode);
 }
 ```
 
-**2. RAG 流程**
+**2. DocumentProcessor - 文档处理器**
+
 ```java
-// 1. 用户提问
-// 2. VectorStore 检索相关文档
-// 3. 将文档作为上下文传递给模型
-// 4. 模型基于上下文生成回答
+@Slf4j
+@Component
+public class DocumentProcessor {
+    // 处理单个文档（分割 + 向量化）
+    public int processDocument(KnowledgeDocument doc);
+
+    // 处理文本内容
+    public int processContent(String kbCode, String content, Map<String, Object> metadata);
+
+    // 批量处理待处理文档
+    public int processPendingDocuments(int limit);
+}
 ```
+
+**3. RagAdvisorBuilder - RAG Advisor 构建器**
+
+```java
+@Slf4j
+@Component
+public class RagAdvisorBuilder {
+    // 为单个知识库创建 Advisor
+    public Advisor buildAdvisor(String kbCode);
+    public Advisor buildAdvisor(String kbCode, Integer topK);
+
+    // 为全局知识库创建 Advisor
+    public Advisor buildGlobalAdvisor();
+
+    // 为多个知识库创建 Advisor
+    public Advisor buildMultiKbAdvisor(List<String> kbCodes, Integer topK);
+
+    // 带元数据过滤的 Advisor
+    public Advisor buildAdvisorWithMetadata(String kbCode, Map<String, Object> metadata);
+}
+```
+
+#### ChatRequest RAG 参数
+
+```java
+@Data
+@Builder
+public class ChatRequest {
+    // ... 其他参数
+
+    // RAG 相关参数
+    @Builder.Default
+    private Boolean enableRag = false;           // 是否启用 RAG
+    private List<String> ragKbCodes;             // 知识库 Code 列表
+    private Integer ragTopK;                     // 返回文档数量
+    private Double ragSimilarityThreshold;       // 相似度阈值
+    private Map<String, Object> ragFilterMetadata; // 元数据过滤
+}
+```
+
+#### LlmChatAgent 集成
+
+```java
+// 在 createChatClient 中动态添加 RAG Advisor
+private ChatClient createChatClient(ChatRequest request, String conversationCode) {
+    // ...
+
+    // 2. RagAdvisor（需要 enableRag=true）
+    if (Boolean.TRUE.equals(request.getEnableRag()) && ragAdvisorBuilder != null) {
+        Advisor ragAdvisor = buildRagAdvisor(request);
+        if (ragAdvisor != null) {
+            advisors.add(ragAdvisor);
+            log.info("[LlmChatAgent] 启用 RAG Advisor, kbCodes: {}", request.getRagKbCodes());
+        }
+    }
+
+    // ...
+}
+```
+
+#### REST API
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/knowledge-base` | GET | 获取所有知识库 |
+| `/api/knowledge-base/enabled` | GET | 获取已启用的知识库 |
+| `/api/knowledge-base/{id}` | GET/PUT/DELETE | 知识库 CRUD |
+| `/api/knowledge-base/code/{kbCode}` | GET | 按 Code 获取知识库 |
+| `/api/knowledge-base/{kbCode}/documents` | GET | 获取知识库文档列表 |
+| `/api/knowledge-base/{kbCode}/documents/text` | POST | 添加文本文档 |
+| `/api/knowledge-base/{kbCode}/documents/markdown` | POST | 添加 Markdown 文档 |
+| `/api/knowledge-base/{kbCode}/documents/url` | POST | 添加 URL 文档 |
+| `/api/knowledge-base/documents/{docCode}/process` | POST | 处理文档 |
+| `/api/knowledge-base/documents/process-pending` | POST | 批量处理待处理文档 |
+| `/api/knowledge-base/{kbCode}/search` | POST | 知识库搜索 |
+| `/api/knowledge-base/global/search` | POST | 全局搜索 |
+| `/api/knowledge-base/{kbCode}/clear` | POST | 清空知识库 |
+
+#### 使用示例
+
+**1. 创建知识库并添加文档**
+
+```bash
+# 创建知识库
+curl -X POST http://localhost:8080/api/knowledge-base \
+  -H "Content-Type: application/json" \
+  -d '{"name": "产品文档", "description": "产品相关文档", "kbType": "PRODUCT"}'
+
+# 添加文本文档
+curl -X POST http://localhost:8080/api/knowledge-base/{kbCode}/documents/text \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "产品介绍",
+    "content": "这是产品介绍内容...",
+    "processNow": true
+  }'
+
+# 搜索知识库
+curl -X POST http://localhost:8080/api/knowledge-base/{kbCode}/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "产品功能", "topK": 5}'
+```
+
+**2. 在对话中使用 RAG**
+
+```java
+// ChatRequest 启用 RAG
+ChatRequest request = ChatRequest.builder()
+    .modelIdentifier("gpt-4")
+    .userMessage("介绍一下产品功能")
+    .enableRag(true)
+    .ragKbCodes(List.of("kb-product"))  // 指定知识库
+    .ragTopK(5)
+    .build();
+
+String response = llmChatAgent.chat(request);
+```
+
+**3. 全局知识库搜索**
+
+```java
+// 不指定知识库，使用全局搜索
+ChatRequest request = ChatRequest.builder()
+    .modelIdentifier("gpt-4")
+    .userMessage("公司有什么产品？")
+    .enableRag(true)
+    // ragKbCodes 为 null，将搜索所有启用的知识库
+    .build();
+```
+
+#### 数据库表结构
+
+```sql
+-- 知识库表
+CREATE TABLE IF NOT EXISTS a_knowledge_bases (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    kb_code VARCHAR(32) NOT NULL UNIQUE COMMENT '知识库唯一标识',
+    name VARCHAR(255) NOT NULL COMMENT '知识库名称',
+    description TEXT COMMENT '描述',
+    kb_type VARCHAR(50) DEFAULT 'GENERAL' COMMENT '类型：GENERAL/FAQ/PRODUCT/CUSTOM',
+    embedding_model VARCHAR(100) DEFAULT 'text-embedding-3-small',
+    embedding_dimensions INT DEFAULT 1536,
+    channel_id BIGINT COMMENT '关联的 Channel ID',
+    document_count INT DEFAULT 0,
+    vector_count INT DEFAULT 0,
+    is_public TINYINT(1) DEFAULT 0,
+    enabled TINYINT(1) DEFAULT 1,
+    metadata JSON,
+    sort_order INT DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_kb_code (kb_code),
+    INDEX idx_enabled (enabled)
+);
+
+-- 知识库文档表
+CREATE TABLE IF NOT EXISTS a_knowledge_documents (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    doc_code VARCHAR(32) NOT NULL UNIQUE COMMENT '文档唯一标识',
+    kb_code VARCHAR(32) NOT NULL COMMENT '关联的知识库',
+    title VARCHAR(500) COMMENT '文档标题',
+    doc_type VARCHAR(20) DEFAULT 'TEXT' COMMENT '类型：TEXT/MARKDOWN/PDF/URL',
+    content MEDIUMTEXT COMMENT '原始内容',
+    content_hash VARCHAR(64) COMMENT '内容哈希',
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '状态：PENDING/PROCESSING/COMPLETED/FAILED',
+    error_message TEXT,
+    chunk_count INT DEFAULT 0,
+    char_count INT DEFAULT 0,
+    source_url VARCHAR(500),
+    metadata JSON,
+    enabled TINYINT(1) DEFAULT 1,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_doc_code (doc_code),
+    INDEX idx_kb_code (kb_code),
+    INDEX idx_status (status)
+);
+```
+
+#### 注意事项
+
+1. **EmbeddingModel 配置**：需要在 Channel 中配置支持 Embedding 的 API（如 OpenAI）
+2. **向量持久化**：SimpleVectorStore 会将向量存储到文件，重启后自动加载
+3. **性能考虑**：生产环境建议使用 PgVector 或 Milvus
+4. **分块策略**：默认使用 TokenTextSplitter，chunk_size=1000, overlap=200
 
 ---
 
@@ -1730,7 +2028,7 @@ llm-agent/src/main/java/com/llmmanager/agent/
 2. ✅ **阶段 2**：工具调用层（已完成）
 3. ✅ **阶段 3**：消息增强与多模态（已完成）
 4. ✅ **阶段 4**：MCP（Model Context Protocol）（已完成）
-5. 🔲 **阶段 4.5**：Vector Store（RAG 支持）
+5. ✅ **阶段 4.5**：Vector Store（RAG 支持）（已完成）
 6. ✅ **阶段 5a**：Graph 工作流（**已完成，支持动态配置**）
 7. 🔲 **阶段 5b**：ReactAgent 智能体（需等待 `spring-ai-alibaba-agent-framework` 发布）
 
@@ -1901,7 +2199,7 @@ llm-ops/src/main/java/com/llmmanager/ops/controller/
 **当前状态**：
 - ✅ Graph 工作流（硬编码）已实现
 - ✅ 动态工作流（JSON 配置）已实现
+- ✅ Vector Store（RAG 支持）已实现
 - ❌ ReactAgent 需等待 `spring-ai-alibaba-agent-framework` 发布
 - ❌ A2A（Agent-to-Agent）需等待框架发布
 
-阶段 4.5 Vector Store 可根据实际需求选择性实现。

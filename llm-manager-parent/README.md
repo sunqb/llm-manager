@@ -255,7 +255,7 @@ erDiagram
 - ✅ **LlmChatAgent**：同步/流式对话接口
 - ✅ **Tool Layer**：Spring AI 原生 @Tool 注解工具调用
 - ✅ **MCP 支持**：Model Context Protocol（Phase 4）
-- ⏳ **Vector Store**：向量存储集成（Phase 4.5）
+- ✅ **Vector Store**：向量存储与 RAG 支持（Phase 4.5，⚠️ 未测试）
 - ⏳ **Agent Framework**：ReactAgent 模式（Phase 5）
 
 **依赖**：llm-common
@@ -1492,23 +1492,46 @@ String response = llmChatAgent.chat(request);
 
 ---
 
-### ⏳ Phase 4.5：Vector Store（向量存储）
+### ✅ Phase 4.5：Vector Store（向量存储与 RAG）⚠️ 未测试
 
-**目标**：支持向量存储和 RAG
+> **注意**：本阶段代码已完成，但尚未进行完整测试。下一任务将测试此功能。
 
-#### 待实现组件
+**目标**：支持向量存储和 RAG（检索增强生成）
 
-- [ ] **Vector Store**
-  - [ ] `VectorStore` 接口
-  - [ ] `Document` - 文档抽象
-  - [ ] `Embedding` - 向量嵌入
-  - [ ] `PgVectorStore` - PostgreSQL pgvector 实现
-  - [ ] `MilvusVectorStore` - Milvus 实现
+#### 已完成功能
 
-- [ ] **RAG 支持**
-  - [ ] `DocumentLoader` - 文档加载器
-  - [ ] `TextSplitter` - 文本分割器
-  - [ ] `RetrievalAdvisor` - 检索增强
+- [x] **Vector Store**
+  - [x] `VectorStoreManager` - 多知识库 VectorStore 管理
+  - [x] `SimpleVectorStore` - 内存存储 + 文件持久化
+  - [x] `MultiKbDocumentRetriever` - 多知识库联合检索
+
+- [x] **RAG 支持**
+  - [x] `DocumentProcessor` - 文档处理器（分割 + 向量化）
+  - [x] `TokenTextSplitter` - 基于 Token 的文本分割
+  - [x] `RagAdvisorBuilder` - RAG Advisor 构建器
+  - [x] `RetrievalAugmentationAdvisor` - Spring AI 官方 RAG Advisor
+
+- [x] **知识库管理**
+  - [x] `KnowledgeBase` - 知识库实体
+  - [x] `KnowledgeDocument` - 文档实体
+  - [x] REST API（CRUD + 文档上传）
+
+- [x] **Embedding 配置独立化**
+  - [x] 支持自定义 `base-url`、`api-key`（可对接 Ollama 等）
+  - [x] 常用模型：`text-embedding-3-small`、`nomic-embed-text`、`bge-m3`
+
+#### 待完成功能（TODO）
+
+| 功能 | 说明 | 位置 |
+|------|------|------|
+| **URL 文档解析** | 实现网页内容抓取，支持 URL 类型文档 | `DocumentProcessor.java:147` |
+| **文件解析（PDF/DOCX/HTML）** | 集成文档解析库，支持富文本文件 | `DocumentProcessor.java:154` |
+| **Milvus 实现** | 完成 Milvus VectorStore 集成 | `VectorStoreManager.java:292` |
+
+**实现建议**：
+- URL 解析：可使用 Jsoup 或 Spring AI 的 `WebDocumentReader`
+- 文件解析：可引入 `spring-ai-tika-document-reader` 依赖，或使用 Apache POI + PDFBox
+- Milvus：添加 `spring-ai-milvus-store` 依赖
 
 ---
 
