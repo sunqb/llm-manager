@@ -4,6 +4,65 @@
 
 本文档描述 LLM Manager 系统的可观测性（Observability）实现方案，采用**无侵入方式**集成监控、指标收集和分布式追踪功能。
 
+## 快速开始
+
+### 1. 启动应用
+
+确保 `application.yml` 中可观测性配置已启用：
+```yaml
+llm:
+  observability:
+    enabled: true
+    metrics-enabled: true
+    tracing-enabled: true
+```
+
+### 2. 验证基础监控
+
+```bash
+# 健康检查
+curl http://localhost:8080/actuator/health
+# 返回: {"status":"UP"}
+
+# 查看所有可用指标
+curl http://localhost:8080/actuator/metrics
+```
+
+### 3. 触发 LLM 指标
+
+**重要**：`llm.chat.*` 指标只有在**执行 LLM 对话后**才会生成。
+
+```bash
+# 先执行一次对话（需要登录）
+curl -X POST http://localhost:8080/api/chat/1/stream \
+  -H "Cookie: satoken={your-token}" \
+  -H "Content-Type: text/plain" \
+  -d "你好"
+
+# 然后查看指标
+curl http://localhost:8080/actuator/metrics/llm.chat.duration
+curl http://localhost:8080/actuator/metrics/llm.chat.total
+curl http://localhost:8080/actuator/metrics/llm.tokens.prompt
+curl http://localhost:8080/actuator/metrics/llm.tokens.completion
+```
+
+### 4. 触发 Agent/Graph 指标
+
+```bash
+# 执行 Agent 或工作流后
+curl http://localhost:8080/actuator/metrics/agent.execution.duration
+curl http://localhost:8080/actuator/metrics/graph.workflow.duration
+```
+
+### 5. 查看日志中的 TraceId
+
+```
+2025-12-18 15:30:00.123 [http-nio-8080-exec-1] [a1b2c3d4e5f6g7h8] [i9j0k1l2] INFO ...
+                                               ↑ TraceId           ↑ SpanId
+```
+
+---
+
 ## 架构设计
 
 ```

@@ -90,7 +90,18 @@
       "Bash(llm-service/src/main/java/com/llmmanager/service/core/mapper/GraphWorkflowMapper.java)",
       "Bash(curl:*)",
       "Bash(JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home mvn clean install:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(grep:*)",
+      "Bash(docs/observability-integration.md )",
+      "Bash(llm-agent/src/main/java/com/llmmanager/agent/advisor/MetricsAdvisor.java )",
+      "Bash(llm-agent/src/main/java/com/llmmanager/agent/observability/ )",
+      "Bash(llm-ops/src/main/resources/logback-spring.xml )",
+      "Bash(llm-agent/pom.xml )",
+      "Bash(llm-openapi/pom.xml )",
+      "Bash(llm-ops/pom.xml )",
+      "Bash(llm-ops/src/main/resources/application.yml )",
+      "Bash(pom.xml )",
+      "Bash(CLAUDE.md)"
     ],
     "deny": [],
     "ask": []

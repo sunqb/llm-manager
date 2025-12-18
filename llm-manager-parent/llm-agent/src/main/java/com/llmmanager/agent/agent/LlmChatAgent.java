@@ -361,9 +361,10 @@ public class LlmChatAgent {
      */
     private ChatClient createChatClient(ChatRequest request, String conversationCode) {
         ChatModel chatModel = getOrCreateChatModel(request);
-        ChatClient.Builder builder = ChatClient.builder(chatModel);
+        // 使用 AdvisorManager 增强 Builder，自动注入全局 Advisor
+        ChatClient.Builder builder = advisorManager.enhance(ChatClient.builder(chatModel));
 
-        // 收集需要的 Advisor
+        // 收集业务相关的 Advisor
         List<Advisor> advisors = new ArrayList<>();
 
         // 1. MemoryAdvisor（需要 conversationCode）
@@ -453,15 +454,10 @@ public class LlmChatAgent {
     // ==================== Spring AI 原生 API ====================
 
     /**
-     * 创建带 Advisor 的 ChatClient
+     * 创建带全局 Advisor 的 ChatClient
      */
     public ChatClient createChatClient(ChatModel chatModel) {
-        ChatClient.Builder builder = ChatClient.builder(chatModel);
-        List<Advisor> advisors = advisorManager.getAllAdvisors();
-        if (!advisors.isEmpty()) {
-            builder.defaultAdvisors(advisors.toArray(new Advisor[0]));
-        }
-        return builder.build();
+        return advisorManager.enhance(ChatClient.builder(chatModel)).build();
     }
 
     /**
