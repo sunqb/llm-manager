@@ -93,6 +93,14 @@ mybatis-plus:
   type-aliases-package: com.llmmanager.service.core.entity
 
 sa-token:
+  # 免登录路径配置（可按需增减）
+  auth:
+    exclude-paths:
+      - /api/auth/login
+      - /api/external/**
+      - /error
+      - /actuator/**
+      - /favicon.ico
   # token名称 (同时也是cookie名称)
   token-name: satoken
   # token有效期，单位s 默认30天, -1代表永不过期
