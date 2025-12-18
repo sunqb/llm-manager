@@ -51,9 +51,22 @@ graph TB
         API[llm-openapi<br/>外部API<br/>:8080]
     end
 
+    subgraph "编排层 (Orchestration)"
+        ORCH[ChatModelProvider<br/>统一模型管理]
+        REACT_EXEC[ReactAgentExecutionService<br/>Agent 执行]
+        GRAPH_EXEC[GraphWorkflowExecutor<br/>工作流执行]
+    end
+
     subgraph "服务层"
         SERVICE[llm-service<br/>业务逻辑层]
         AGENT[llm-agent<br/>AI交互层]
+    end
+
+    subgraph "Agent 框架"
+        REACT[ReactAgent<br/>AgentWrapper]
+        WORKFLOW[ConfigurableAgentWorkflow<br/>顺序/并行/路由]
+        SUPERVISOR[SupervisorAgentTeam<br/>多Agent协作]
+        GRAPH[Graph Workflow<br/>动态工作流]
     end
 
     subgraph "基础设施层"
@@ -71,25 +84,42 @@ graph TB
     UI -->|HTTP| OPS
     UI -->|HTTP| API
 
-    OPS --> SERVICE
-    API --> SERVICE
+    OPS --> ORCH
+    API --> ORCH
+
+    ORCH --> REACT_EXEC
+    ORCH --> GRAPH_EXEC
+    REACT_EXEC --> SERVICE
+    GRAPH_EXEC --> SERVICE
 
     SERVICE --> AGENT
     SERVICE --> COMMON
     AGENT --> COMMON
 
-    AGENT -->|Spring AI| OPENAI
-    AGENT -->|Spring AI| OLLAMA
-    AGENT -->|Spring AI| AZURE
-    AGENT -->|Spring AI| OTHER
+    AGENT --> REACT
+    AGENT --> WORKFLOW
+    AGENT --> SUPERVISOR
+    AGENT --> GRAPH
+
+    REACT -->|Spring AI| OPENAI
+    REACT -->|Spring AI| OLLAMA
+    REACT -->|Spring AI| AZURE
+    REACT -->|Spring AI| OTHER
 
     SERVICE --> DB
     AGENT --> DB
 
     style OPS fill:#e1f5ff
     style API fill:#e1f5ff
+    style ORCH fill:#ffe0b2
+    style REACT_EXEC fill:#ffe0b2
+    style GRAPH_EXEC fill:#ffe0b2
     style SERVICE fill:#fff9c4
     style AGENT fill:#fff9c4
+    style REACT fill:#e8f5e9
+    style WORKFLOW fill:#e8f5e9
+    style SUPERVISOR fill:#e8f5e9
+    style GRAPH fill:#e8f5e9
     style COMMON fill:#f3e5f5
     style DB fill:#c8e6c9
 ```
@@ -125,6 +155,50 @@ sequenceDiagram
     Controller-->>User: SSE 流式输出
 ```
 
+### ReactAgent 执行流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Controller as ReactAgentController
+    participant Provider as ChatModelProvider
+    participant Executor as ReactAgentExecutionService
+    participant Factory as ReactAgentFactory
+    participant Agent as AgentWrapper
+    participant Tools as ToolRegistry
+    participant LLM as LLM Provider
+
+    User->>Controller: POST /api/react-agent/execute
+    Controller->>Provider: getChatModel(modelId)
+    Provider-->>Controller: ChatModel (缓存)
+    Controller->>Executor: executeFromDatabase(agentId, input)
+    Executor->>Factory: createAgent(config, chatModel)
+    Factory->>Tools: getTools(toolNames)
+    Tools-->>Factory: List<ToolCallback>
+    Factory-->>Executor: AgentWrapper
+
+    alt SINGLE 模式
+        Executor->>Agent: execute(input)
+        Agent->>LLM: ReAct 循环
+        LLM-->>Agent: 思考/行动/观察
+    else SEQUENTIAL 模式
+        Executor->>Agent: executeWorkflow(agents, input)
+        loop 每个 Agent
+            Agent->>LLM: 执行
+            LLM-->>Agent: 结果
+        end
+    else SUPERVISOR 模式
+        Executor->>Agent: executeTeam(supervisor, workers, input)
+        Agent->>LLM: Supervisor 决策
+        LLM-->>Agent: 分配任务
+        Agent->>Agent: Worker 执行
+    end
+
+    Agent-->>Executor: 执行结果
+    Executor-->>Controller: 返回结果
+    Controller-->>User: JSON 响应
+```
+
 ### 数据库表结构
 
 ```mermaid
@@ -132,28 +206,21 @@ erDiagram
     P_USERS ||--o{ P_API_KEY : creates
     P_CHANNEL ||--o{ P_LLM_MODEL : contains
     P_LLM_MODEL ||--o{ P_AGENTS : uses
+    P_LLM_MODEL ||--o{ P_REACT_AGENT : uses
+    P_LLM_MODEL ||--o{ P_GRAPH_WORKFLOWS : uses
+
     A_CHAT_HISTORY {
         bigint id PK
-        varchar conversation_id
+        varchar conversation_code
         varchar message_type
         text content
         json metadata
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
     }
     P_USERS {
         bigint id PK
         varchar username UK
         varchar password
         varchar email
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
     }
     P_CHANNEL {
         bigint id PK
@@ -161,11 +228,6 @@ erDiagram
         varchar base_url
         varchar api_key
         varchar type
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
     }
     P_LLM_MODEL {
         bigint id PK
@@ -174,53 +236,74 @@ erDiagram
         bigint channel_id FK
         double temperature
         int max_tokens
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
     }
     P_AGENTS {
         bigint id PK
         varchar name
         varchar slug UK
-        text description
         text system_prompt
         bigint llm_model_id FK
-        double temperature_override
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
+    }
+    P_REACT_AGENT {
+        bigint id PK
+        varchar name
+        varchar slug UK
+        varchar agent_type
+        bigint model_id FK
+        text agent_config
+        tinyint is_active
+    }
+    P_GRAPH_WORKFLOWS {
+        bigint id PK
+        varchar name
+        varchar slug UK
+        varchar workflow_type
+        bigint default_model_id FK
+        text graph_config
+        tinyint is_active
     }
     P_PROMPT {
         bigint id PK
         varchar name
         text content
         text description
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
     }
     P_API_KEY {
         bigint id PK
         varchar name
         varchar token UK
         tinyint active
-        datetime create_time
-        datetime update_time
-        varchar create_by
-        varchar update_by
-        tinyint is_delete
+    }
+    A_MCP_SERVERS {
+        bigint id PK
+        varchar server_code UK
+        varchar name
+        varchar transport_type
+        text connection_config
+        tinyint is_enabled
     }
 ```
 
 **表命名规范**：
-- `p_*` - 业务表（llm-service 模块）
-- `a_*` - Agent 相关表（llm-agent 模块）
+- `p_*` - 业务配置表（llm-service 模块）
+- `a_*` - Agent 运行时表（llm-agent 模块）
+
+**核心业务表**：
+
+| 表名 | 说明 | 模块 |
+|------|------|------|
+| `p_users` | 用户表 | llm-service |
+| `p_channel` | LLM 渠道配置 | llm-service |
+| `p_llm_model` | LLM 模型配置 | llm-service |
+| `p_agents` | 基础 Agent 配置 | llm-service |
+| `p_react_agent` | ReactAgent 配置（SINGLE/SEQUENTIAL/SUPERVISOR） | llm-agent |
+| `p_graph_workflows` | Graph 工作流配置 | llm-agent |
+| `p_prompt` | 提示词模板 | llm-service |
+| `p_api_key` | API 密钥 | llm-service |
+| `a_chat_history` | 对话历史 | llm-agent |
+| `a_conversations` | 会话元数据 | llm-agent |
+| `a_mcp_servers` | MCP 服务器配置 | llm-agent |
+| `a_knowledge_bases` | 知识库配置 | llm-agent |
 
 **基础字段**（所有表必备）：
 - `create_time` - 创建时间（自动填充）
@@ -254,11 +337,12 @@ erDiagram
 - ✅ **ChatMemory 管理**：对话历史持久化到 MySQL
 - ✅ **LlmChatAgent**：同步/流式对话接口
 - ✅ **Tool Layer**：Spring AI 原生 @Tool 注解工具调用
-- ✅ **MCP 支持**：Model Context Protocol（Phase 4）
-- ✅ **Vector Store**：向量存储与 RAG 支持（Phase 4.5，⚠️ 未测试）
-- ⏳ **Agent Framework**：ReactAgent 模式（Phase 5）
+- ✅ **MCP 支持**：Model Context Protocol
+- ✅ **Vector Store**：向量存储与 RAG 支持
+- ✅ **ReactAgent 框架**：SINGLE/SEQUENTIAL/SUPERVISOR 三种模式
+- ✅ **Graph 工作流**：动态配置驱动的工作流编排
 
-**依赖**：llm-common
+**依赖**：llm-common, spring-ai-alibaba-agent-framework
 
 **包路径**：`com.llmmanager.agent`
 
@@ -267,14 +351,24 @@ erDiagram
 com.llmmanager.agent
 ├── message/          # 消息抽象层
 ├── model/            # ChatModel 抽象
-├── advisor/          # 对话增强（记忆管理）
+├── advisor/          # 对话增强（记忆管理、思考模式）
 ├── storage/          # 数据持久化
-│   ├── entity/       # ChatHistory 实体
+│   ├── entity/       # ChatHistory, ReactAgent 实体
 │   ├── mapper/       # MyBatis Mapper
-│   └── impl/         # 存储实现
+│   └── service/      # 存储服务
 ├── agent/            # LlmChatAgent 核心类
 ├── config/           # 配置类（ToolFunctionManager）
 ├── tools/            # Spring AI 原生工具类
+├── reactagent/       # ReactAgent 框架 ✨ 新增
+│   ├── core/         # AgentWrapper, AgentToolAdapter
+│   ├── configurable/ # ConfigurableAgentWorkflow
+│   ├── autonomous/   # SupervisorAgentTeam
+│   ├── factory/      # ReactAgentFactory
+│   └── registry/     # ToolRegistry
+├── graph/            # Graph 工作流 ✨ 新增
+│   ├── dynamic/      # 动态工作流构建器
+│   ├── workflow/     # 硬编码工作流（DeepResearch）
+│   └── executor/     # 节点执行器
 └── dto/              # 请求 DTO
 ```
 
@@ -284,12 +378,23 @@ com.llmmanager.agent
 
 **核心模块**：
 - `service.core` - 实体、Mapper、基础 Service（Channel, Model, Agent, ApiKey, User, Prompt）
-- `service.orchestration` - `LlmExecutionService` 业务编排
+- `service.orchestration` - 编排层（统一执行入口）✨ 重构
+
+**编排层组件**：
+
+| 组件 | 职责 |
+|------|------|
+| `ChatModelProvider` | 统一 ChatModel/ChatClient 管理和缓存 |
+| `LlmExecutionService` | 基础对话执行 |
+| `ReactAgentExecutionService` | ReactAgent 执行（硬编码场景） |
+| `DynamicReactAgentExecutionService` | ReactAgent 执行（数据库配置） |
+| `GraphExecutionService` | Graph 工作流执行（DeepResearch） |
+| `DynamicWorkflowExecutionService` | Graph 工作流执行（动态配置） |
 
 **业务流程**：
 1. 获取 Model 和 Channel 配置
-2. 构建 `ChatRequest` 对象
-3. 调用 `llm-agent` 执行对话
+2. 通过 `ChatModelProvider` 获取 ChatModel
+3. 调用对应的执行服务
 4. 处理业务逻辑（如温度覆盖、模板渲染）
 
 **依赖**：llm-common, llm-agent
@@ -308,7 +413,10 @@ com.llmmanager.agent
 - `ChatController` - 对话接口（含工具调用）
 - `ModelController` - 模型管理
 - `PromptController` - 提示词管理
-- `ToolController` - 工具管理（获取工具列表）
+- `ToolController` - 工具管理
+- `ReactAgentController` - ReactAgent 执行 ✨ 新增
+- `GraphWorkflowController` - Graph 工作流执行 ✨ 新增
+- `McpServerController` - MCP 服务器管理
 
 **端口**：8080
 
