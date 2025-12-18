@@ -430,6 +430,80 @@ public Object aroundYourMethod(ProceedingJoinPoint joinPoint) throws Throwable {
    - Micrometer Tracing 自动处理 HTTP 请求的 TraceId 传播
    - ObservabilityAspect 为无 TraceId 的内部调用自动生成 16 位 TraceId
 
+---
+
+## 未来扩展：Customizer 模式
+
+当全局 Advisor 数量增加到 **3 个以上**，或有**多个 ChatClient 创建点**时，建议重构为 Customizer 模式（参考 Spring Boot 的 `WebClientCustomizer`）。
+
+### 设计方案
+
+**1. 定义接口**
+
+```java
+@FunctionalInterface
+public interface ChatClientBuilderCustomizer {
+    void customize(ChatClient.Builder builder);
+}
+```
+
+**2. 创建工厂**
+
+```java
+@Component
+public class ChatClientBuilderFactory {
+    private final List<ChatClientBuilderCustomizer> customizers;
+
+    public ChatClientBuilderFactory(ObjectProvider<ChatClientBuilderCustomizer> provider) {
+        this.customizers = provider.orderedStream().toList();
+    }
+
+    public ChatClient.Builder builder(ChatModel chatModel) {
+        ChatClient.Builder builder = ChatClient.builder(chatModel);
+        customizers.forEach(c -> c.customize(builder));
+        return builder;
+    }
+}
+```
+
+**3. 实现 Customizer**
+
+```java
+@Component
+@ConditionalOnProperty(name = "llm.observability.metrics-enabled", havingValue = "true")
+public class MetricsCustomizer implements ChatClientBuilderCustomizer {
+    @Resource
+    private MetricsAdvisor metricsAdvisor;
+
+    @Override
+    public void customize(ChatClient.Builder builder) {
+        builder.defaultAdvisors(metricsAdvisor);
+    }
+}
+```
+
+**4. 使用方式**
+
+```java
+// 自动应用所有 Customizer，无需手动调用
+ChatClient.Builder builder = chatClientBuilderFactory.builder(chatModel);
+```
+
+### 优势
+
+| 对比项 | 当前方案 (enhance) | Customizer 模式 |
+|-------|-------------------|-----------------|
+| 遗漏风险 | 需记得调用 | 自动应用，零遗漏 |
+| 扩展性 | 修改 AdvisorManager | 添加新 Customizer 即可 |
+| 符合 Spring 风格 | 一般 | 完全符合 |
+
+### 适用条件
+
+- 全局 Advisor ≥ 3 个
+- ChatClient 创建点 ≥ 3 个
+
+---
+
 ## 参考资料
 
 - [Spring Boot Actuator 文档](https://docs.spring.io/spring-boot/docs/current/reference/html/actuator.html)
