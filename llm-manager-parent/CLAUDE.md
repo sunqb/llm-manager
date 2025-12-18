@@ -800,10 +800,10 @@ llm-agent/
 │   └── impl/
 │       ├── WeatherTool.java
 │       └── CalculatorTool.java
-├── mcp/                  # MCP 支持（🔲 待实现）
-│   └── McpClient.java
-├── graph/                # 工作流编排（🔲 待实现）
-│   └── WorkflowGraph.java
+├── mcp/                  # MCP 支持（✅ 已实现）
+│   └── McpClientManager.java
+├── graph/                # 工作流编排（✅ 已实现）
+│   └── GraphWorkflowExecutor.java
 └── dto/
     └── ChatRequest.java
 ```
@@ -2035,7 +2035,7 @@ llm-agent/src/main/java/com/llmmanager/agent/
 4. ✅ **阶段 4**：MCP（Model Context Protocol）（已完成）
 5. ✅ **阶段 4.5**：Vector Store（RAG 支持）（已完成，已测试）
 6. ✅ **阶段 5a**：Graph 工作流（**已完成，支持动态配置**）
-7. 🔲 **阶段 5b**：ReactAgent 智能体（需等待 `spring-ai-alibaba-agent-framework` 发布）
+7. ✅ **阶段 5b**：ReactAgent 智能体（**已完成**，基于 `spring-ai-alibaba-agent-framework:1.1.0.0-RC1`）
 
 ---
 
@@ -2189,13 +2189,97 @@ llm-ops/src/main/java/com/llmmanager/ops/controller/
 └── GraphWorkflowController.java       # 统一工作流 REST API（合并了 DynamicWorkflowController）
 ```
 
+---
+
+### 阶段 5b：ReactAgent 智能体（已完成）
+
+基于 `spring-ai-alibaba-agent-framework:1.1.0.0-RC1` 实现的智能体框架，支持两种协作模式：
+
+#### 核心组件
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `AgentWrapper` | reactagent/core/ | ReactAgent 封装，简化使用 |
+| `AgentToolAdapter` | reactagent/core/ | Agent-as-Tool 适配器 |
+| `ConfigurableAgentWorkflow` | reactagent/configurable/ | 配置驱动的协作框架 |
+| `SupervisorAgentTeam` | reactagent/autonomous/ | Agent 自主协作框架 |
+
+#### 方案 A：ConfigurableAgentWorkflow（配置协作模式）
+
+大流程人工配置，节点内 Agent 自主推理。支持三种模式：
+
+| 模式 | 说明 | 适用场景 |
+|------|------|---------|
+| `SEQUENTIAL` | 顺序执行多个 Agent | 流水线处理 |
+| `PARALLEL` | 并行执行多个 Agent | 独立任务并发 |
+| `ROUTING` | LLM 动态路由到不同 Agent | 智能分发 |
+
+```java
+// 使用示例
+ConfigurableAgentWorkflow workflow = ConfigurableAgentWorkflow.builder()
+    .name("research-workflow")
+    .pattern(WorkflowPattern.SEQUENTIAL)
+    .agent(researchAgent)
+    .agent(analysisAgent)
+    .agent(summaryAgent)
+    .build();
+
+WorkflowResult result = workflow.execute("研究人工智能的发展趋势");
+```
+
+#### 方案 B：SupervisorAgentTeam（自主协作模式）
+
+Supervisor Agent 完全自主决定调用哪个 Worker Agent。
+
+```java
+// 使用示例
+SupervisorAgentTeam team = SupervisorAgentTeam.builder()
+    .name("research-team")
+    .chatModel(chatModel)
+    .worker(researchAgent)
+    .worker(analysisAgent)
+    .worker(writerAgent)
+    .build();
+
+String result = team.execute("帮我研究并撰写一篇关于量子计算的报告");
+```
+
+#### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/reactagent/
+├── core/                                # 核心基础
+│   ├── AgentWrapper.java               # ReactAgent 封装
+│   └── AgentToolAdapter.java           # Agent-as-Tool 适配器
+├── configurable/                        # 方案A：配置协作模式
+│   ├── ConfigurableAgentWorkflow.java  # 核心类
+│   ├── WorkflowPattern.java            # 模式枚举
+│   ├── config/
+│   │   ├── AgentConfig.java            # Agent 配置
+│   │   └── AgentWorkflowConfig.java    # 工作流配置
+│   └── pattern/
+│       ├── PatternExecutor.java        # 模式执行器接口
+│       ├── SequentialPatternExecutor.java
+│       ├── ParallelPatternExecutor.java
+│       ├── RoutingPatternExecutor.java
+│       └── WorkflowResult.java         # 执行结果
+├── autonomous/                          # 方案B：自主协作
+│   └── SupervisorAgentTeam.java        # Supervisor + Workers
+└── example/                             # 示例
+    ├── SingleAgentExample.java          # 单个 ReactAgent 示例
+    ├── ConfigurableWorkflowExample.java # 方案A 示例
+    └── AutonomousTeamExample.java       # 方案B 示例
+```
+
+---
+
 #### 概念区分
 
 | 概念 | 说明 | 依赖 |
 |------|------|------|
 | **动态 Graph** | JSON 配置驱动，用户可自定义 | `spring-ai-alibaba-graph-core` ✅ |
 | **硬编码 Graph** | 代码定义，固定流程 | `spring-ai-alibaba-graph-core` ✅ |
-| **ReactAgent** | LLM 自主推理，动态决策 | `spring-ai-alibaba-agent-framework` ❌ |
+| **ReactAgent** | LLM 自主推理，动态决策 | `spring-ai-alibaba-agent-framework` ✅ |
 
 ---
 
@@ -2205,6 +2289,207 @@ llm-ops/src/main/java/com/llmmanager/ops/controller/
 - ✅ Graph 工作流（硬编码）已实现
 - ✅ 动态工作流（JSON 配置）已实现
 - ✅ Vector Store（RAG 支持）已实现
-- ❌ ReactAgent 需等待 `spring-ai-alibaba-agent-framework` 发布
-- ❌ A2A（Agent-to-Agent）需等待框架发布
+- ✅ ReactAgent 智能体已实现（基于 `spring-ai-alibaba-agent-framework:1.1.0.0-RC1`）
+- ✅ 多 Agent 协作已实现（ConfigurableAgentWorkflow + SupervisorAgentTeam）
+
+---
+
+## 编排层架构重构（2025-12-18）
+
+### 重构目标
+
+消除 `llm-service/orchestration` 层的代码重复，统一 ChatModel 管理和执行逻辑。
+
+### 核心问题
+
+1. **ChatModel 创建重复**：多个服务各自实现 ChatModel/ChatClient 的创建和缓存
+2. **执行逻辑重复**：ReactAgent 和 Graph 工作流的执行逻辑分散在各服务中
+3. **API 参数冗余**：`executeFromDatabase` 方法的 `modelId` 参数不必要
+
+### 重构方案
+
+#### 1. ChatModelProvider - 统一 ChatModel 管理
+
+创建 `ChatModelProvider` 服务，集中管理 ChatModel/ChatClient 的获取和缓存：
+
+```java
+@Service
+public class ChatModelProvider {
+    // ChatModel 缓存
+    private final Map<String, OpenAiChatModel> chatModelCache = new ConcurrentHashMap<>();
+
+    // 根据模型 ID 获取 OpenAiChatModel
+    public OpenAiChatModel getChatModelByModelId(Long modelId);
+
+    // 根据模型 ID 获取 ChatClient
+    public ChatClient getChatClientByModelId(Long modelId);
+
+    // 根据模型 ID 构建 ChatRequest
+    public ChatRequest buildChatRequest(Long modelId);
+
+    // 清除缓存
+    public void clearCacheForChannel(Long channelId);
+    public void clearAllCache();
+}
+```
+
+#### 2. ReactAgentExecutionService - 公共执行方法
+
+添加公共执行方法，供 `DynamicReactAgentExecutionService` 复用：
+
+```java
+@Service
+public class ReactAgentExecutionService {
+    // 公共执行方法
+    public Map<String, Object> executeAgent(AgentWrapper agent, String message);
+    public Map<String, Object> executeWorkflow(ConfigurableAgentWorkflow workflow, String message);
+    public Map<String, Object> executeTeam(SupervisorAgentTeam team, String message);
+
+    // 预定义场景（硬编码）
+    public Map<String, Object> executeUniversalAssistant(Long modelId, String message);
+    public Map<String, Object> executeResearchPipeline(Long modelId, String message);
+    public Map<String, Object> executeEnterpriseTeam(Long modelId, String message);
+}
+```
+
+#### 3. GraphWorkflowExecutor - 通用执行层
+
+添加通用执行方法，供所有 Graph 工作流复用：
+
+```java
+@Service
+public class GraphWorkflowExecutor {
+    // 通用执行方法
+    public Map<String, Object> execute(CompiledGraph compiledGraph, Map<String, Object> initialState);
+    public Flux<NodeOutput> executeStream(CompiledGraph compiledGraph, Map<String, Object> initialState);
+    public Map<String, Object> executeWithCache(CompiledGraph compiledGraph, String cacheKey, Map<String, Object> initialState);
+    public Map<String, Object> executeFromCache(String cacheKey, Map<String, Object> initialState);
+
+    // DeepResearch 专用方法（保持向后兼容）
+    public ResearchResult deepResearch(ChatClient chatClient, String cacheKey, String question);
+    public Flux<ResearchProgress> deepResearchStream(ChatClient chatClient, String cacheKey, String question);
+}
+```
+
+#### 4. API 简化
+
+移除 `executeFromDatabase` 方法的 `modelId` 参数，从 `ReactAgent` 实体获取：
+
+```java
+// 修改前
+@PostMapping("/db/{slug}/{modelId}")
+public Map<String, Object> executeFromDatabase(@PathVariable String slug, @PathVariable Long modelId, @RequestBody String message);
+
+// 修改后
+@PostMapping("/db/{slug}")
+public Map<String, Object> executeFromDatabase(@PathVariable String slug, @RequestBody String message);
+```
+
+### 架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Controller 层                                   │
+│  ReactAgentController    GraphController    DynamicWorkflowController       │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Orchestration 层                                   │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                      ChatModelProvider                               │    │
+│  │  - getChatModelByModelId(modelId)                                   │    │
+│  │  - getChatClientByModelId(modelId)                                  │    │
+│  │  - buildChatRequest(modelId)                                        │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                    │                                         │
+│           ┌────────────────────────┼────────────────────────┐               │
+│           ▼                        ▼                        ▼               │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │ ReactAgent      │    │ Graph           │    │ Dynamic         │         │
+│  │ ExecutionService│    │ ExecutionService│    │ WorkflowService │         │
+│  │                 │    │                 │    │                 │         │
+│  │ 公共执行方法:    │    │ 使用:           │    │ 使用:           │         │
+│  │ - executeAgent  │    │ GraphWorkflow   │    │ GraphWorkflow   │         │
+│  │ - executeWorkflow│   │ Executor        │    │ Executor        │         │
+│  │ - executeTeam   │    │                 │    │                 │         │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
+│           ▲                        │                        │               │
+│           │                        ▼                        ▼               │
+│  ┌─────────────────┐    ┌─────────────────────────────────────────┐        │
+│  │ Dynamic         │    │           GraphWorkflowExecutor          │        │
+│  │ ReactAgent      │    │  - execute(CompiledGraph, initialState)  │        │
+│  │ ExecutionService│    │  - executeStream(...)                    │        │
+│  │                 │    │  - deepResearch(...)                     │        │
+│  │ 复用公共执行方法 │    └─────────────────────────────────────────┘        │
+│  └─────────────────┘                                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Agent 层                                        │
+│  AgentWrapper    ConfigurableAgentWorkflow    SupervisorAgentTeam           │
+│  CompiledGraph   DeepResearchWorkflow         DynamicGraphBuilder           │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 服务职责对比
+
+| 服务 | 数据来源 | 执行逻辑 | ChatModel |
+|------|---------|---------|-----------|
+| `ReactAgentExecutionService` | 硬编码 | 自身实现 | ChatModelProvider |
+| `DynamicReactAgentExecutionService` | 数据库 | 复用 ReactAgentExecutionService | ChatModelProvider |
+| `GraphExecutionService` | 硬编码 (DeepResearch) | GraphWorkflowExecutor | ChatModelProvider |
+| `DynamicWorkflowExecutionService` | 数据库 | GraphWorkflowExecutor | ChatModelProvider |
+
+### 修改文件清单
+
+| 文件 | 修改类型 | 说明 |
+|------|---------|------|
+| `ChatModelProvider.java` | 新增 | 统一 ChatModel 管理 |
+| `ReactAgentExecutionService.java` | 修改 | 添加公共执行方法 |
+| `DynamicReactAgentExecutionService.java` | 修改 | 复用公共执行方法，移除 modelId 参数 |
+| `GraphWorkflowExecutor.java` | 修改 | 添加通用执行方法 |
+| `GraphExecutionService.java` | 修改 | 使用 ChatModelProvider |
+| `DynamicWorkflowExecutionService.java` | 修改 | 使用 GraphWorkflowExecutor |
+| `ReactAgentController.java` | 修改 | API 路径简化 |
+
+### 设计模式
+
+1. **Provider 模式**：`ChatModelProvider` 统一提供 ChatModel 实例
+2. **Template Method 模式**：公共执行方法定义执行骨架，子类/调用方提供具体实现
+3. **Facade 模式**：`GraphWorkflowExecutor` 封装复杂的工作流执行逻辑
+4. **Cache 模式**：ChatModel 和 CompiledGraph 缓存
+
+---
+
+## 📋 待开发任务
+
+### 1. 可观测性（Observability）🔴 高优先级
+
+**目标**：为 Agent 和工作流执行添加完整的可观测性支持
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| 执行时间统计 | 总耗时、各节点耗时 | ⏳ |
+| Token 使用量统计 | 输入/输出/总计 | ⏳ |
+| 成功率/失败率统计 | 执行结果统计 | ⏳ |
+| 结构化日志 | JSON 格式日志 | ⏳ |
+| 请求追踪 ID | TraceId 贯穿全链路 | ⏳ |
+| Prometheus 指标 | 指标暴露 | ⏳ |
+| 执行历史持久化 | 执行记录存储 | ⏳ |
+
+### 2. 整体重构（异常处理、返回格式）🟡 中优先级
+
+**目标**：统一异常处理机制和返回格式，提升代码质量
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| 业务异常体系 | BaseException、BusinessException、SystemException | ⏳ |
+| 全局异常处理器 | @ControllerAdvice | ⏳ |
+| 异常码标准化 | 模块前缀 + 错误码 | ⏳ |
+| Result<T> 返回类 | 统一返回格式 | ⏳ |
+| PageResult<T> | 分页响应格式 | ⏳ |
+| 参数校验统一 | @Valid + 自定义校验器 | ⏳ |
 

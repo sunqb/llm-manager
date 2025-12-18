@@ -42,6 +42,12 @@
             <artifactId>spring-ai-alibaba-graph-core</artifactId>
         </dependency>
 
+        <!-- Spring AI Alibaba Agent Framework -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
+        </dependency>
+
         <!-- Spring AI Vector Store Advisors (for RAG) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

@@ -1,15 +1,12 @@
 package com.llmmanager.service.orchestration;
 
-import com.llmmanager.agent.dto.ChatRequest;
 import com.llmmanager.agent.graph.GraphWorkflowExecutor;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchProgress;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchResult;
 import com.llmmanager.service.core.entity.Channel;
 import com.llmmanager.service.core.entity.LlmModel;
-import com.llmmanager.service.core.service.ChannelService;
-import com.llmmanager.service.core.service.LlmModelService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -17,37 +14,36 @@ import javax.annotation.Resource;
 import java.util.List;
 
 /**
- * Graph 工作流执行服务 - 业务逻辑编排层
- * 
- * 提供 DeepResearch 等高级工作流功能的业务编排
+ * Graph 工作流执行服务 - DeepResearch 业务层
+ *
+ * 提供 DeepResearch 深度研究工作流的业务编排
+ *
+ * 与 DynamicWorkflowExecutionService 的关系：
+ * - GraphExecutionService：硬编码的 DeepResearch 工作流（专用返回类型）
+ * - DynamicWorkflowExecutionService：从 JSON 配置动态构建的工作流
+ * - 两者都复用 GraphWorkflowExecutor 的执行能力
+ *
+ * ChatModel 管理已统一由 ChatModelProvider 提供
  */
 @Slf4j
 @Service
 public class GraphExecutionService {
 
     @Resource
-    private LlmModelService llmModelService;
-
-    @Resource
-    private ChannelService channelService;
+    private ChatModelProvider chatModelProvider;
 
     @Resource
     private GraphWorkflowExecutor graphWorkflowExecutor;
-
-    @Value("${spring.ai.openai.api-key:}")
-    private String defaultApiKey;
-
-    @Value("${spring.ai.openai.base-url:https://api.openai.com}")
-    private String defaultBaseUrl;
 
     /**
      * 同步执行深度研究
      */
     public ResearchResult deepResearch(Long modelId, String question) {
         log.info("[GraphExecution] 开始深度研究, modelId: {}", modelId);
-        
-        ChatRequest request = buildChatRequest(modelId);
-        return graphWorkflowExecutor.deepResearch(request, question);
+
+        ChatClient chatClient = chatModelProvider.getChatClientByModelId(modelId);
+        String cacheKey = buildCacheKey(modelId);
+        return graphWorkflowExecutor.deepResearch(chatClient, cacheKey, question);
     }
 
     /**
@@ -55,9 +51,10 @@ public class GraphExecutionService {
      */
     public Flux<ResearchProgress> deepResearchStream(Long modelId, String question) {
         log.info("[GraphExecution] 开始流式深度研究, modelId: {}", modelId);
-        
-        ChatRequest request = buildChatRequest(modelId);
-        return graphWorkflowExecutor.deepResearchStream(request, question);
+
+        ChatClient chatClient = chatModelProvider.getChatClientByModelId(modelId);
+        String cacheKey = buildCacheKey(modelId);
+        return graphWorkflowExecutor.deepResearchStream(chatClient, cacheKey, question);
     }
 
     /**
@@ -65,55 +62,24 @@ public class GraphExecutionService {
      */
     public List<ResearchProgress> deepResearchWithProgress(Long modelId, String question) {
         log.info("[GraphExecution] 开始带进度深度研究, modelId: {}", modelId);
-        
-        // 使用流式方法收集所有进度
-        ChatRequest request = buildChatRequest(modelId);
-        return graphWorkflowExecutor.deepResearchStream(request, question)
+
+        ChatClient chatClient = chatModelProvider.getChatClientByModelId(modelId);
+        String cacheKey = buildCacheKey(modelId);
+        return graphWorkflowExecutor.deepResearchStream(chatClient, cacheKey, question)
                 .collectList()
                 .block();
     }
 
     /**
-     * 构建 ChatRequest
+     * 构建缓存键
      */
-    private ChatRequest buildChatRequest(Long modelId) {
-        LlmModel model = getModel(modelId);
-        Channel channel = getChannel(model);
-
-        return ChatRequest.builder()
-                .channelId(channel.getId())
-                .apiKey(getApiKey(channel))
-                .baseUrl(getBaseUrl(channel))
-                .modelIdentifier(model.getModelIdentifier())
-                .temperature(model.getTemperature())
-                .build();
-    }
-
-    private LlmModel getModel(Long modelId) {
-        LlmModel model = llmModelService.getById(modelId);
-        if (model == null) {
-            throw new RuntimeException("Model not found: " + modelId);
-        }
-        return model;
-    }
-
-    private Channel getChannel(LlmModel model) {
-        Channel channel = channelService.getById(model.getChannelId());
-        if (channel == null) {
-            throw new RuntimeException("Channel not found for model: " + model.getId());
-        }
-        return channel;
-    }
-
-    private String getApiKey(Channel channel) {
-        return channel.getApiKey() != null && !channel.getApiKey().isEmpty()
-                ? channel.getApiKey()
-                : defaultApiKey;
-    }
-
-    private String getBaseUrl(Channel channel) {
-        return channel.getBaseUrl() != null && !channel.getBaseUrl().isEmpty()
-                ? channel.getBaseUrl()
-                : defaultBaseUrl;
+    private String buildCacheKey(Long modelId) {
+        LlmModel model = chatModelProvider.getModel(modelId);
+        Channel channel = chatModelProvider.getChannel(model);
+        return String.format("%d_%s_%s_%s",
+                channel.getId(),
+                chatModelProvider.getApiKey(channel),
+                chatModelProvider.getBaseUrl(channel),
+                model.getModelIdentifier());
     }
 }

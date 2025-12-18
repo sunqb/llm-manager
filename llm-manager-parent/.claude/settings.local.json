@@ -87,7 +87,10 @@
       "Bash(llm-service/src/main/java/com/llmmanager/service/orchestration/LlmExecutionService.java)",
       "Bash(llm-ops/src/main/java/com/llmmanager/ops/controller/DynamicWorkflowController.java )",
       "Bash(llm-service/src/main/java/com/llmmanager/service/core/entity/GraphWorkflow.java )",
-      "Bash(llm-service/src/main/java/com/llmmanager/service/core/mapper/GraphWorkflowMapper.java)"
+      "Bash(llm-service/src/main/java/com/llmmanager/service/core/mapper/GraphWorkflowMapper.java)",
+      "Bash(curl:*)",
+      "Bash(JAVA_HOME=/Volumes/samsungssd/soft/jdk-21.0.8.jdk/Contents/Home mvn clean install:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []

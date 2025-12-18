@@ -10,11 +10,9 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.llmmanager.agent.graph.node.*;
 import com.llmmanager.agent.graph.state.ResearchState;
 import lombok.extern.slf4j.Slf4j;
-import org.bsc.async.AsyncGenerator;
 import org.springframework.ai.chat.client.ChatClient;
 import reactor.core.publisher.Flux;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -78,8 +76,8 @@ public class DeepResearchWorkflow {
             }
         };
 
-        // 构建工作流图
-        return new StateGraph("DeepResearch Workflow", ResearchState.createFactory())
+        // 构建工作流图（使用新版本 KeyStrategyFactory）
+        return new StateGraph("DeepResearch Workflow", ResearchState.createKeyStrategyFactory())
                 // 添加节点
                 .addNode("query_decomposition", decompositionNode)
                 .addNode("information_gathering", gatheringNode)
@@ -147,7 +145,7 @@ public class DeepResearchWorkflow {
 
     /**
      * 流式执行研究（返回进度更新）
-     * 将 AsyncGenerator 转换为 Flux
+     * 新版本 Spring AI Alibaba 直接返回 Flux<NodeOutput>
      */
     public Flux<ResearchProgress> researchStream(String question) {
         log.info("[DeepResearch] 开始流式研究: {}", question);
@@ -161,16 +159,13 @@ public class DeepResearchWorkflow {
                 .threadId(UUID.randomUUID().toString())
                 .build();
 
-        AsyncGenerator<NodeOutput> generator = compiledGraph.stream(initialState, config);
-
-        // 将 AsyncGenerator 转换为 Flux
-        return Flux.create(sink -> {
-            try {
-                generator.forEachAsync(nodeOutput -> {
+        // 新版本直接返回 Flux<NodeOutput>
+        return compiledGraph.stream(initialState, config)
+                .map(nodeOutput -> {
                     OverAllState state = nodeOutput.state();
                     String currentNode = state.<String>value(ResearchState.KEY_CURRENT_NODE).orElse(nodeOutput.node());
 
-                    ResearchProgress progress = ResearchProgress.builder()
+                    return ResearchProgress.builder()
                             .nodeName(currentNode)
                             .question(state.<String>value(ResearchState.KEY_QUESTION).orElse(""))
                             .currentAnswer(state.<String>value(ResearchState.KEY_FINAL_ANSWER).orElse(""))
@@ -178,21 +173,13 @@ public class DeepResearchWorkflow {
                             .qualityScore(state.<Integer>value(ResearchState.KEY_QUALITY_SCORE).orElse(0))
                             .iterationCount(state.<Integer>value(ResearchState.KEY_ITERATION_COUNT).orElse(0))
                             .build();
-
-                    sink.next(progress);
-                }).thenAccept(v -> sink.complete());
-            } catch (Exception e) {
-                sink.error(e);
-            }
-        });
+                });
     }
 
     /**
      * 同步获取所有进度（用于简单场景）
      */
     public List<ResearchProgress> researchWithProgress(String question) {
-        List<ResearchProgress> progressList = new ArrayList<>();
-
         Map<String, Object> initialState = Map.of(
                 ResearchState.KEY_QUESTION, question,
                 ResearchState.KEY_ITERATION_COUNT, 0
@@ -202,25 +189,23 @@ public class DeepResearchWorkflow {
                 .threadId(UUID.randomUUID().toString())
                 .build();
 
-        AsyncGenerator<NodeOutput> generator = compiledGraph.stream(initialState, config);
+        // 新版本使用 Flux 的 collectList() 方法
+        return compiledGraph.stream(initialState, config)
+                .map(nodeOutput -> {
+                    OverAllState state = nodeOutput.state();
+                    String currentNode = state.<String>value(ResearchState.KEY_CURRENT_NODE).orElse(nodeOutput.node());
 
-        generator.forEachAsync(nodeOutput -> {
-            OverAllState state = nodeOutput.state();
-            String currentNode = state.<String>value(ResearchState.KEY_CURRENT_NODE).orElse(nodeOutput.node());
-
-            ResearchProgress progress = ResearchProgress.builder()
-                    .nodeName(currentNode)
-                    .question(state.<String>value(ResearchState.KEY_QUESTION).orElse(""))
-                    .currentAnswer(state.<String>value(ResearchState.KEY_FINAL_ANSWER).orElse(""))
-                    .analysis(state.<String>value(ResearchState.KEY_ANALYSIS).orElse(""))
-                    .qualityScore(state.<Integer>value(ResearchState.KEY_QUALITY_SCORE).orElse(0))
-                    .iterationCount(state.<Integer>value(ResearchState.KEY_ITERATION_COUNT).orElse(0))
-                    .build();
-
-            progressList.add(progress);
-        }).join();
-
-        return progressList;
+                    return ResearchProgress.builder()
+                            .nodeName(currentNode)
+                            .question(state.<String>value(ResearchState.KEY_QUESTION).orElse(""))
+                            .currentAnswer(state.<String>value(ResearchState.KEY_FINAL_ANSWER).orElse(""))
+                            .analysis(state.<String>value(ResearchState.KEY_ANALYSIS).orElse(""))
+                            .qualityScore(state.<Integer>value(ResearchState.KEY_QUALITY_SCORE).orElse(0))
+                            .iterationCount(state.<Integer>value(ResearchState.KEY_ITERATION_COUNT).orElse(0))
+                            .build();
+                })
+                .collectList()
+                .block();
     }
 
     /**

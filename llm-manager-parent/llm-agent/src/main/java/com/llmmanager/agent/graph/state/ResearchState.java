@@ -1,13 +1,16 @@
 package com.llmmanager.agent.graph.state;
 
-import com.alibaba.cloud.ai.graph.OverAllState;
-import com.alibaba.cloud.ai.graph.OverAllStateFactory;
+import com.alibaba.cloud.ai.graph.KeyStrategy;
+import com.alibaba.cloud.ai.graph.KeyStrategyFactory;
 import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * DeepResearch 工作流状态管理
- * 
+ *
  * 状态键说明：
  * - question: 用户原始问题
  * - sub_questions: 分解后的子问题列表
@@ -30,23 +33,25 @@ public class ResearchState {
     public static final String KEY_ERROR_MESSAGE = "error_message";
 
     /**
-     * 创建状态工厂
+     * 创建 KeyStrategyFactory
+     *
+     * 新版本 Spring AI Alibaba 使用 KeyStrategyFactory 替代 OverAllStateFactory
      */
-    public static OverAllStateFactory createFactory() {
+    public static KeyStrategyFactory createKeyStrategyFactory() {
         return () -> {
-            OverAllState state = new OverAllState();
+            Map<String, KeyStrategy> strategies = new HashMap<>();
             // 使用 ReplaceStrategy 的键（单值）
-            state.registerKeyAndStrategy(KEY_QUESTION, new ReplaceStrategy());
-            state.registerKeyAndStrategy(KEY_ANALYSIS, new ReplaceStrategy());
-            state.registerKeyAndStrategy(KEY_FINAL_ANSWER, new ReplaceStrategy());
-            state.registerKeyAndStrategy(KEY_ITERATION_COUNT, new ReplaceStrategy());
-            state.registerKeyAndStrategy(KEY_QUALITY_SCORE, new ReplaceStrategy());
-            state.registerKeyAndStrategy(KEY_CURRENT_NODE, new ReplaceStrategy());
-            state.registerKeyAndStrategy(KEY_ERROR_MESSAGE, new ReplaceStrategy());
+            strategies.put(KEY_QUESTION, new ReplaceStrategy());
+            strategies.put(KEY_ANALYSIS, new ReplaceStrategy());
+            strategies.put(KEY_FINAL_ANSWER, new ReplaceStrategy());
+            strategies.put(KEY_ITERATION_COUNT, new ReplaceStrategy());
+            strategies.put(KEY_QUALITY_SCORE, new ReplaceStrategy());
+            strategies.put(KEY_CURRENT_NODE, new ReplaceStrategy());
+            strategies.put(KEY_ERROR_MESSAGE, new ReplaceStrategy());
             // 使用 AppendStrategy 的键（累积）
-            state.registerKeyAndStrategy(KEY_SUB_QUESTIONS, new AppendStrategy());
-            state.registerKeyAndStrategy(KEY_SEARCH_RESULTS, new AppendStrategy());
-            return state;
+            strategies.put(KEY_SUB_QUESTIONS, new AppendStrategy());
+            strategies.put(KEY_SEARCH_RESULTS, new AppendStrategy());
+            return strategies;
         };
     }
 

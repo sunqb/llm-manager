@@ -1982,37 +1982,51 @@ llm-agent/src/main/java/com/llmmanager/agent/graph/
 
 ---
 
-### ⏳ Phase 5b：Agent Framework（Agent 框架）
+### ✅ Phase 5b：Agent Framework（Agent 框架）- 已完成
 
-**目标**：实现 ReactAgent 模式和多 Agent 协作（需等待 `spring-ai-alibaba-agent-framework` 发布到 Maven Central）
+**目标**：实现 ReactAgent 模式和多 Agent 协作
 
-#### llm-agent 待实现组件
+#### llm-agent 已实现组件
 
-- [ ] **ReactAgent**（需 `spring-ai-alibaba-agent-framework`）
-  - [ ] `ReactAgent` - 推理-行动循环
-  - [ ] `AgentExecutor` - Agent 执行器
-  - [ ] `AgentPlanner` - 任务规划
-  - [ ] `AgentMemory` - 长期记忆
+- [x] **ReactAgent**（基于 `spring-ai-alibaba-agent-framework:1.1.0.0-RC1`）
+  - [x] `AgentWrapper` - ReactAgent 封装，简化使用
+  - [x] `AgentToolAdapter` - Agent-as-Tool 适配器
+  - [x] `ToolRegistry` - 工具注册中心
 
-- [ ] **Multi-Agent**
-  - [ ] `AgentOrchestrator` - Agent 编排器
-  - [ ] `AgentCommunication` - Agent 间通信
-  - [ ] `AgentChain` - Agent 链式调用
+- [x] **Multi-Agent**
+  - [x] `ConfigurableAgentWorkflow` - 配置驱动的协作框架（SEQUENTIAL/PARALLEL/ROUTING）
+  - [x] `SupervisorAgentTeam` - Supervisor + Workers 自主协作
+  - [x] `ReactAgentFactory` - Agent 工厂（从数据库配置构建）
 
-- [ ] **A2A（Agent-to-Agent）**
-  - [ ] 多 Agent 协作协议
-  - [ ] Agent 发现和通信
+- [x] **执行服务层**
+  - [x] `ReactAgentExecutionService` - 硬编码场景执行
+  - [x] `DynamicReactAgentExecutionService` - 数据库配置驱动执行
 
-**预期效果**：
+**使用示例**：
 ```java
-// ReactAgent 自主推理和行动（区别于 Graph 工作流的固定流程）
-User: "帮我预订明天去上海的机票"
--> Agent 思考：需要知道用户的出发城市
--> Agent 行动：调用 UserProfileTool 获取信息
--> Agent 思考：需要查询航班
--> Agent 行动：调用 FlightSearchTool
--> Agent 思考：需要确认用户选择
--> Agent 行动：返回航班列表让用户选择
+// 单个 ReactAgent
+AgentWrapper agent = AgentWrapper.builder()
+    .name("assistant")
+    .chatModel(chatModel)
+    .tools(toolCallbacks)
+    .build();
+String result = agent.call("帮我查询北京天气");
+
+// 顺序工作流
+ConfigurableAgentWorkflow workflow = ConfigurableAgentWorkflow.builder()
+    .pattern(WorkflowPattern.SEQUENTIAL)
+    .agent(researchAgent)
+    .agent(analysisAgent)
+    .build();
+WorkflowResult result = workflow.execute("研究人工智能发展趋势");
+
+// Supervisor 团队
+SupervisorAgentTeam team = SupervisorAgentTeam.builder()
+    .chatModel(chatModel)
+    .worker(researchAgent)
+    .worker(writerAgent)
+    .build();
+String result = team.execute("撰写一篇关于量子计算的报告");
 ```
 
 ---
@@ -2038,12 +2052,40 @@ User: "帮我预订明天去上海的机票"
 - [ ] XSS 过滤增强
 - [ ] 敏感数据加密存储
 
-#### 可观测性
+#### 可观测性 🔴 高优先级
 
-- [ ] 日志结构化（JSON 格式）
-- [ ] Metrics 监控（Prometheus）
-- [ ] 分布式追踪（Sleuth）
-- [ ] 健康检查端点
+- [ ] **执行指标收集**
+  - [ ] 执行时间统计（总耗时、各节点耗时）
+  - [ ] Token 使用量统计（输入/输出/总计）
+  - [ ] 成功率/失败率统计
+  - [ ] 工具调用次数统计
+- [ ] **日志增强**
+  - [ ] 结构化日志（JSON 格式）
+  - [ ] 请求追踪 ID（TraceId）
+  - [ ] 执行链路日志（节点进入/退出）
+- [ ] **监控集成**
+  - [ ] Prometheus 指标暴露
+  - [ ] Grafana 仪表盘模板
+  - [ ] 告警规则配置
+- [ ] **执行记录持久化**
+  - [ ] 执行历史表设计
+  - [ ] 执行详情存储（输入/输出/中间状态）
+  - [ ] 执行回放功能
+
+#### 整体重构（异常处理、返回格式）🟡 中优先级
+
+- [ ] **统一异常处理**
+  - [ ] 定义业务异常体系（BaseException、BusinessException、SystemException）
+  - [ ] 全局异常处理器（@ControllerAdvice）
+  - [ ] 异常码标准化（模块前缀 + 错误码）
+- [ ] **统一返回格式**
+  - [ ] 定义 Result<T> 通用返回类
+  - [ ] 成功/失败响应格式统一
+  - [ ] 分页响应格式统一（PageResult<T>）
+- [ ] **代码质量提升**
+  - [ ] 参数校验统一（@Valid + 自定义校验器）
+  - [ ] 空值处理规范（Optional 使用规范）
+  - [ ] 资源释放检查（try-with-resources）
 
 #### 部署支持
 

@@ -468,3 +468,27 @@ CREATE TABLE IF NOT EXISTS a_knowledge_documents (
     INDEX idx_enabled (enabled),
     INDEX idx_is_delete (is_delete)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档表';
+
+-- =============================================
+-- ReactAgent 配置表
+-- 支持 SINGLE / SEQUENTIAL / SUPERVISOR 三种模式
+-- =============================================
+CREATE TABLE IF NOT EXISTS p_react_agent (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    name VARCHAR(100) NOT NULL COMMENT 'Agent 名称',
+    slug VARCHAR(100) UNIQUE COMMENT '唯一标识（用于 API 调用）',
+    description VARCHAR(500) COMMENT '描述',
+    agent_type VARCHAR(50) NOT NULL DEFAULT 'SINGLE' COMMENT 'Agent 类型：SINGLE/SEQUENTIAL/SUPERVISOR',
+    model_id BIGINT COMMENT '关联模型 ID',
+    agent_config TEXT COMMENT 'Agent 配置（JSON 格式）',
+    is_active TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+    INDEX idx_slug (slug),
+    INDEX idx_agent_type (agent_type),
+    INDEX idx_is_active (is_active),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ReactAgent 配置表';

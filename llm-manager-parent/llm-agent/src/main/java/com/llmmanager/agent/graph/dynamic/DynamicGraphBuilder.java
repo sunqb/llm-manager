@@ -1,8 +1,8 @@
 package com.llmmanager.agent.graph.dynamic;
 
 import com.alibaba.cloud.ai.graph.CompiledGraph;
+import com.alibaba.cloud.ai.graph.KeyStrategyFactory;
 import com.alibaba.cloud.ai.graph.OverAllState;
-import com.alibaba.cloud.ai.graph.OverAllStateFactory;
 import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.action.AsyncEdgeAction;
 import com.alibaba.cloud.ai.graph.action.AsyncNodeAction;
@@ -64,11 +64,11 @@ public class DynamicGraphBuilder {
         // 1. 验证配置
         config.validate();
 
-        // 2. 创建状态工厂
-        OverAllStateFactory stateFactory = createStateFactory(config.getStateConfig());
+        // 2. 创建 KeyStrategyFactory
+        KeyStrategyFactory keyStrategyFactory = createKeyStrategyFactory(config.getStateConfig());
 
         // 3. 创建 StateGraph
-        StateGraph stateGraph = new StateGraph(config.getName(), stateFactory);
+        StateGraph stateGraph = new StateGraph(config.getName(), keyStrategyFactory);
 
         // 4. 添加节点
         for (NodeConfig nodeConfig : config.getNodes()) {
@@ -87,30 +87,32 @@ public class DynamicGraphBuilder {
     }
 
     /**
-     * 创建状态工厂
+     * 创建 KeyStrategyFactory
+     *
+     * 新版本 Spring AI Alibaba 使用 KeyStrategyFactory 替代 OverAllStateFactory
      */
-    private OverAllStateFactory createStateFactory(GraphWorkflowConfig.StateConfig stateConfig) {
+    private KeyStrategyFactory createKeyStrategyFactory(GraphWorkflowConfig.StateConfig stateConfig) {
         return () -> {
-            OverAllState state = new OverAllState();
+            java.util.Map<String, com.alibaba.cloud.ai.graph.KeyStrategy> strategies = new java.util.HashMap<>();
 
             // 注册所有状态键及其更新策略
             for (StateKeyConfig keyConfig : stateConfig.getKeys()) {
                 if (keyConfig.isAppend()) {
-                    state.registerKeyAndStrategy(keyConfig.getKey(), new AppendStrategy());
+                    strategies.put(keyConfig.getKey(), new AppendStrategy());
                     log.debug("[DynamicGraphBuilder] 注册状态键: {} (APPEND)", keyConfig.getKey());
                 } else {
-                    state.registerKeyAndStrategy(keyConfig.getKey(), new ReplaceStrategy());
+                    strategies.put(keyConfig.getKey(), new ReplaceStrategy());
                     log.debug("[DynamicGraphBuilder] 注册状态键: {} (REPLACE)", keyConfig.getKey());
                 }
             }
 
             // 必须注册 next_node 键（用于条件路由）
             if (stateConfig.getKeys().stream().noneMatch(k -> "next_node".equals(k.getKey()))) {
-                state.registerKeyAndStrategy("next_node", new ReplaceStrategy());
+                strategies.put("next_node", new ReplaceStrategy());
                 log.debug("[DynamicGraphBuilder] 自动注册状态键: next_node (REPLACE)");
             }
 
-            return state;
+            return strategies;
         };
     }
 

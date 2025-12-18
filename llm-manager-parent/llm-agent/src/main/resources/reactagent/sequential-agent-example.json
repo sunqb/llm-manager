@@ -1,0 +1,21 @@
+{
+  "agents": [
+    {
+      "name": "researcher",
+      "instruction": "你是一个研究员，负责收集和整理信息。请使用新闻工具获取最新资讯，并整理成结构化的报告。",
+      "tools": ["news", "datetime"]
+    },
+    {
+      "name": "analyst",
+      "instruction": "你是一个分析师，负责对研究员提供的信息进行深入分析。请结合股票数据和计算工具，给出专业的分析结论。",
+      "tools": ["stock", "calculator"]
+    },
+    {
+      "name": "writer",
+      "instruction": "你是一个专业写手，负责将分析结果整理成易于理解的报告。请使用翻译工具确保术语准确，并生成最终报告。",
+      "tools": ["translation"]
+    }
+  ],
+  "maxIterations": 15
+}
+

@@ -6,7 +6,7 @@ import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchProgress
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchResult;
 import com.llmmanager.agent.storage.core.entity.GraphWorkflow;
 import com.llmmanager.agent.storage.core.service.GraphWorkflowService;
-import com.llmmanager.service.graph.DynamicWorkflowExecutionService;
+import com.llmmanager.service.orchestration.DynamicWorkflowExecutionService;
 import com.llmmanager.service.orchestration.GraphExecutionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -16,7 +16,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
-import jakarta.annotation.Resource;
+import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
