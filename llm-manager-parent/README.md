@@ -2157,6 +2157,94 @@ java -version
 
 ## 📝 更新日志
 
+### v2.6.0 (2025-12-18) - ReactAgent 框架与编排层重构
+
+#### 🚀 新增功能
+
+**1. ReactAgent 框架**
+- **AgentWrapper**：统一的 Agent 封装器，支持 SINGLE、SEQUENTIAL、SUPERVISOR 三种类型
+- **ConfigurableAgentWorkflow**：可配置的 Agent 工作流，支持顺序执行模式
+- **SupervisorAgentTeam**：Supervisor 模式的多 Agent 协作团队
+- **ReactAgentFactory**：从数据库配置动态创建 Agent 的工厂类
+- **ToolRegistry**：工具注册中心，支持动态工具发现和注册
+
+**2. 示例工具集**
+- `DateTimeTools`：日期时间工具
+- `KnowledgeTools`：知识库查询工具
+- `NewsTools`：新闻搜索工具
+- `StockTools`：股票查询工具
+- `TranslationTools`：翻译工具
+
+**3. 示例配置**
+- `resources/reactagent/single-agent-example.json`
+- `resources/reactagent/sequential-agent-example.json`
+- `resources/reactagent/supervisor-agent-example.json`
+
+#### 🔄 架构重构
+
+**1. ChatModelProvider - 统一 ChatModel 管理**
+- 集中管理 ChatModel/ChatClient 的创建和缓存
+- 消除各服务中重复的 ChatModel 创建逻辑
+- 支持按 Channel 清除缓存
+
+**2. ReactAgentExecutionService - 公共执行方法**
+- `executeAgent()`：执行单个 Agent
+- `executeWorkflow()`：执行顺序工作流
+- `executeTeam()`：执行 Supervisor 团队
+- `DynamicReactAgentExecutionService` 复用这些公共方法
+
+**3. GraphWorkflowExecutor - 通用执行层**
+- `execute(CompiledGraph, initialState)`：同步执行
+- `executeStream(CompiledGraph, initialState)`：流式执行
+- `executeWithCache()`：带缓存执行
+- `GraphExecutionService` 和 `DynamicWorkflowExecutionService` 统一使用
+
+**4. API 简化**
+- `executeFromDatabase` 移除冗余 `modelId` 参数（Agent 配置已包含 modelId）
+
+#### 📁 新增文件
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── reactagent/
+│   ├── autonomous/SupervisorAgentTeam.java
+│   ├── config/ReactAgentConfigDTO.java
+│   ├── configurable/
+│   │   ├── ConfigurableAgentWorkflow.java
+│   │   ├── WorkflowPattern.java
+│   │   ├── config/AgentConfig.java
+│   │   ├── config/AgentWorkflowConfig.java
+│   │   └── pattern/*.java
+│   ├── core/AgentWrapper.java, AgentToolAdapter.java
+│   ├── example/*.java
+│   ├── factory/ReactAgentFactory.java
+│   └── registry/ToolRegistry.java
+├── storage/core/
+│   ├── entity/ReactAgent.java
+│   ├── mapper/ReactAgentMapper.java
+│   └── service/ReactAgentService.java
+└── tools/*.java
+
+llm-service/src/main/java/com/llmmanager/service/orchestration/
+├── ChatModelProvider.java (新增)
+├── ReactAgentExecutionService.java (新增)
+└── DynamicReactAgentExecutionService.java (新增)
+
+docs/orchestration-layer-refactoring.md (新增技术文档)
+```
+
+#### 🎯 设计模式
+
+| 模式 | 应用 |
+|------|------|
+| Provider | ChatModelProvider 统一提供 ChatModel |
+| Template Method | 公共执行方法定义执行骨架 |
+| Facade | GraphWorkflowExecutor 封装复杂执行逻辑 |
+| Cache | ChatModel 和 CompiledGraph 缓存 |
+| Factory | ReactAgentFactory 动态创建 Agent |
+
+---
+
 ### v2.5.0 (2024-12-12) - 架构重构与命名规范化
 
 #### 🔄 重大变更
