@@ -37,6 +37,8 @@
         <sa-token.version>1.44.0</sa-token.version>
         <spring-ai.version>1.1.0</spring-ai.version>
         <spring-ai-alibaba.version>1.1.0.0-RC1</spring-ai-alibaba.version>
+        <!-- 升级 Jackson 版本以兼容 spring-ai-alibaba-graph-core (需要 treeToValue(TreeNode, TypeReference) 方法) -->
+        <jackson-bom.version>2.17.2</jackson-bom.version>
     </properties>
 
     <dependencyManagement>
