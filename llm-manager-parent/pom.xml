@@ -148,6 +148,9 @@
                 <artifactId>spring-ai-tika-document-reader</artifactId>
                 <version>${spring-ai.version}</version>
             </dependency>
+
+            <!-- 注意：可观测性依赖（Actuator、Micrometer Tracing、Zipkin）由 Spring Boot BOM 管理，
+                 不需要在此声明版本，子模块直接引用即可 -->
         </dependencies>
     </dependencyManagement>
 

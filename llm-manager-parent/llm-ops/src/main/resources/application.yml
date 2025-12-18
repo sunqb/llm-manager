@@ -3,6 +3,11 @@ spring:
     allow-bean-definition-overriding: true
   application:
     name: llm-manager
+  # 排除 Zipkin 自动配置（仅保留 TraceId/SpanId 日志记录，不发送到 Zipkin）
+  # 如需启用 Zipkin，注释掉下面的 exclude 配置
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.tracing.zipkin.ZipkinAutoConfiguration
   datasource:
     url: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=true&requireSSL=true&verifyServerCertificate=false&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -111,6 +116,12 @@ server:
 
 # LLM Manager 配置
 llm:
+  # ==================== 可观测性开关配置 ====================
+  observability:
+    enabled: true                      # 总开关（false 则所有可观测性组件不加载）
+    metrics-enabled: true              # 指标收集开关
+    tracing-enabled: true              # 分布式追踪开关（TraceId/SpanId 日志记录）
+    # 注意：Zipkin 开关通过 spring.autoconfigure.exclude 控制，见文件顶部配置
   mcp:
     enabled: true
     request-timeout: 30
@@ -151,3 +162,26 @@ logging:
     org.springframework.web.client.RestClient: DEBUG
     reactor.netty.http.client: DEBUG
     com.llmmanager.agent.mcp: INFO
+
+# ==================== 可观测性配置 ====================
+# Spring Boot Actuator 配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  # 分布式追踪配置
+  tracing:
+    enabled: ${llm.observability.tracing-enabled:true}
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}  # 采样率（生产环境建议 0.1）
+  # Zipkin 配置（仅当启用 Zipkin 时生效）
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

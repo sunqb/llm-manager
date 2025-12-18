@@ -2464,21 +2464,114 @@ public Map<String, Object> executeFromDatabase(@PathVariable String slug, @Reque
 
 ---
 
+## 可观测性（Observability）✅ 已实现
+
+### 概述
+
+基于无侵入方式实现的可观测性支持，包括：
+- **基础监控**：Spring Boot Actuator 端点
+- **业务指标**：MetricsAdvisor (LLM 对话) + ObservabilityAspect (Agent/Graph)
+- **分布式追踪**：Micrometer Tracing + Brave + Zipkin
+
+### 配置开关
+
+```yaml
+llm:
+  observability:
+    enabled: true           # 总开关（false 则所有组件不加载）
+    metrics-enabled: true   # 指标收集开关
+    tracing-enabled: true   # 分布式追踪开关
+```
+
+### 监控端点
+
+| 端点 | 说明 |
+|------|------|
+| `/actuator/health` | 健康检查 |
+| `/actuator/info` | 应用信息 |
+| `/actuator/metrics` | 指标列表 |
+| `/actuator/metrics/{name}` | 指定指标详情 |
+
+### 关键指标
+
+| 指标 | 类型 | 标签 | 说明 |
+|-----|------|------|------|
+| `llm.chat.duration` | Timer | model, channel, status | LLM 对话耗时 |
+| `llm.tokens.prompt` | Counter | model, channel | 输入 Token 数 |
+| `llm.tokens.completion` | Counter | model, channel | 输出 Token 数 |
+| `llm.chat.total` | Counter | model, channel, status | 对话总次数 |
+| `agent.execution.duration` | Timer | type, method, status | Agent 执行耗时 |
+| `agent.execution.total` | Counter | type, method, status | Agent 执行次数 |
+| `graph.workflow.duration` | Timer | type, method, status | 工作流耗时 |
+| `graph.workflow.total` | Counter | type, method, status | 工作流执行次数 |
+
+### 分布式追踪
+
+**Zipkin 配置**：
+```yaml
+management:
+  tracing:
+    enabled: ${llm.observability.tracing-enabled:true}
+    sampling:
+      probability: 1.0  # 采样率（生产环境建议 0.1）
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+```
+
+**日志格式**（含 TraceId）：
+```
+2025-12-18 15:00:00.000 [main] [abc123def456] [12345678] INFO c.l.a.o.ObservabilityAspect - 开始执行...
+```
+
+### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── advisor/
+│   └── MetricsAdvisor.java          # LLM 对话指标收集
+└── observability/
+    ├── ObservabilityAspect.java     # AOP 切面（Agent/Graph 指标）
+    ├── ObservabilityConfig.java     # 配置类
+    └── ObservabilityProperties.java # 配置属性
+```
+
+### 验收方式
+
+```bash
+# 启动应用后验证
+# 1. 健康检查
+curl http://localhost:8080/actuator/health
+
+# 2. 查看 LLM 对话指标（需要先执行对话）
+curl http://localhost:8080/actuator/metrics/llm.chat.duration
+
+# 3. 查看 Agent 执行指标（需要先执行 Agent）
+curl http://localhost:8080/actuator/metrics/agent.execution.duration
+
+# 4. Zipkin UI（需要启动 Zipkin）
+# docker run -d -p 9411:9411 openzipkin/zipkin
+# 访问 http://localhost:9411
+```
+
+---
+
 ## 📋 待开发任务
 
-### 1. 可观测性（Observability）🔴 高优先级
+### 1. 可观测性增强 🟢 低优先级
 
-**目标**：为 Agent 和工作流执行添加完整的可观测性支持
+**目标**：在已实现基础上进一步增强
 
 | 任务 | 说明 | 状态 |
 |------|------|------|
-| 执行时间统计 | 总耗时、各节点耗时 | ⏳ |
-| Token 使用量统计 | 输入/输出/总计 | ⏳ |
-| 成功率/失败率统计 | 执行结果统计 | ⏳ |
-| 结构化日志 | JSON 格式日志 | ⏳ |
-| 请求追踪 ID | TraceId 贯穿全链路 | ⏳ |
-| Prometheus 指标 | 指标暴露 | ⏳ |
-| 执行历史持久化 | 执行记录存储 | ⏳ |
+| 执行时间统计 | 总耗时、各节点耗时 | ✅ 已实现 |
+| Token 使用量统计 | 输入/输出/总计 | ✅ 已实现 |
+| 成功率/失败率统计 | 执行结果统计 | ✅ 已实现 |
+| 结构化日志 | JSON 格式日志 | ⏳ 可选 |
+| 请求追踪 ID | TraceId 贯穿全链路 | ✅ 已实现 |
+| Prometheus 指标 | 指标暴露 | ⏳ 可选（当前使用 Actuator） |
+| 执行历史持久化 | 执行记录存储 | ✅ 已有（a_conversation_turns 表） |
+| Grafana 仪表盘 | 可视化面板 | ⏳ 可选 |
 
 ### 2. 整体重构（异常处理、返回格式）🟡 中优先级
 
