@@ -491,12 +491,41 @@ spring:
     password: your-password
 ```
 
+#### 配置 Embedding（OpenAI / 本地 Ollama）
+
+项目的 RAG 需要 Embedding 服务（生成向量）。默认走 `spring.ai.openai` 配置：
+
+- OpenAI：设置 `OPENAI_API_KEY`（或在 `application.yml` 里配置 `spring.ai.openai.api-key`）
+
+本地开发推荐用 Ollama（走 OpenAI 兼容接口）：
+
+1) 安装 Ollama 并拉取 embedding 模型（二选一）：
+```bash
+ollama pull nomic-embed-text   # 768 维
+# 或
+ollama pull bge-m3            # 1024 维
+```
+
+2) 修改 `llm-ops/src/main/resources/application.yml`：
+```yaml
+llm:
+  rag:
+    embedding:
+      base-url: http://localhost:11434   # 注意不要写 /v1
+      api-key: ollama                    # Ollama 不校验，可随便填
+      model: nomic-embed-text            # 或 bge-m3
+      dimensions: 768                    # bge-m3: 1024
+```
+
+> 注意：`text-embedding-3-small` 是 OpenAI 模型，不能用 Ollama 本地安装。
+
 ### 3. 初始化数据库
 
 执行 SQL 脚本创建表结构：
 
 ```bash
-mysql -h your-host -u username -p llm_manager < llm-ops/src/main/resources/schema.sql
+mysql -h your-host -u username -p your_database < db/schema.sql
+mysql -h your-host -u username -p your_database < db/initdata.sql
 ```
 
 ### 4. 编译项目
@@ -1631,7 +1660,27 @@ String response = llmChatAgent.chat(request);
 
 - [x] **Embedding 配置独立化**
   - [x] 支持自定义 `base-url`、`api-key`（可对接 Ollama 等）
-  - [x] 常用模型：`text-embedding-3-small`、`nomic-embed-text`、`bge-m3`
+  - [x] 常用模型：OpenAI `text-embedding-3-small`；Ollama `nomic-embed-text`、`bge-m3`
+
+#### 本地 Ollama Embedding 快速配置
+
+1) 拉取模型：
+```bash
+ollama pull nomic-embed-text
+```
+
+2) 配置：
+```yaml
+llm:
+  rag:
+    embedding:
+      base-url: http://localhost:11434
+      api-key: ollama
+      model: nomic-embed-text
+      dimensions: 768
+```
+
+📖 RAG 的架构、执行步骤、以及向量库实现（Simple/TiDB/Milvus）详见：`docs/rag-guide.md`
 
 #### 待完成功能（TODO）
 
@@ -1639,12 +1688,16 @@ String response = llmChatAgent.chat(request);
 |------|------|------|
 | **URL 文档解析** | 实现网页内容抓取，支持 URL 类型文档 | `DocumentProcessor.java:147` |
 | **文件解析（PDF/DOCX/HTML）** | 集成文档解析库，支持富文本文件 | `DocumentProcessor.java:154` |
-| **Milvus 实现** | 完成 Milvus VectorStore 集成 | `VectorStoreManager.java:292` |
+| **分布式定时任务处理待处理文档** | 集成 XXL-Job 等分布式定时任务中间件，定时调用 `processPendingDocuments()` 处理 PENDING 状态的文档 | `KnowledgeBaseController.java:219` |
 
 **实现建议**：
 - URL 解析：可使用 Jsoup 或 Spring AI 的 `WebDocumentReader`
 - 文件解析：可引入 `spring-ai-tika-document-reader` 依赖，或使用 Apache POI + PDFBox
-- Milvus：添加 `spring-ai-milvus-store` 依赖
+- 分布式定时任务：
+  - 集成 XXL-Job、ElasticJob 或 PowerJob 等分布式调度中间件
+  - 创建定时任务 Handler，调用 `DocumentProcessor.processPendingDocuments(limit)`
+  - 支持动态调整执行频率、并发控制、失败重试等企业级特性
+  - 推荐配置：每分钟执行一次，每次处理 10-50 个待处理文档
 
 ---
 

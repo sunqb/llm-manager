@@ -60,6 +60,12 @@
             <artifactId>spring-ai-vector-store</artifactId>
         </dependency>
 
+        <!-- Spring AI Milvus Vector Store -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-milvus-store</artifactId>
+        </dependency>
+
         <!-- Gson (required by spring-ai-alibaba-graph-core) -->
         <dependency>
             <groupId>com.google.code.gson</groupId>

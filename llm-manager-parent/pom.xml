@@ -142,6 +142,13 @@
                 <version>${spring-ai.version}</version>
             </dependency>
 
+            <!-- Spring AI Milvus Vector Store -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-milvus-store</artifactId>
+                <version>${spring-ai.version}</version>
+            </dependency>
+
             <!-- Spring AI Tika Document Reader (for parsing documents) -->
             <dependency>
                 <groupId>org.springframework.ai</groupId>

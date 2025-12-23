@@ -4,6 +4,12 @@
 
 包含所有表结构定义，用于初始化数据库。
 
+## schema_vector.sql
+
+包含 TiDB Vector Search 向量表结构（`a_knowledge_vectors`），用于持久化 RAG 向量数据。
+
+> 使用 TiDB 原生向量类型 `VECTOR(D)` 与 `VECTOR INDEX`，执行前请确认你的 TiDB Cloud 集群已支持 Vector Search。
+
 ### ⚠️ 重要说明
 
 **本项目不再使用 Spring Boot 自动数据库初始化功能，开发人员必须手动执行 SQL 脚本创建数据库表。**
@@ -17,6 +23,9 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS llm_manager CHARACTER SET utf
 
 # 2. 执行建表脚本
 mysql -u root -p llm_manager < db/schema.sql
+
+# 3. （可选）执行向量表脚本（使用 TiDB Vector Search 时）
+mysql -u root -p llm_manager < db/schema_vector.sql
 ```
 
 **方式 2：MySQL 客户端**

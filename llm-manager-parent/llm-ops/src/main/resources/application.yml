@@ -9,10 +9,11 @@ spring:
     exclude:
       - org.springframework.boot.actuate.autoconfigure.tracing.zipkin.ZipkinAutoConfiguration
   datasource:
-    url: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=true&requireSSL=true&verifyServerCertificate=false&serverTimezone=Asia/Shanghai
+    # 建议通过环境变量注入，避免提交敏感信息到代码仓库
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/llm-manager?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    username: "NUPhAVaoZgc5LRA.root"
-    password: "8yoXrt8lI7dfCvCN"
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
     druid:
       # 初始化连接数
       initial-size: 5
@@ -139,12 +140,14 @@ llm:
     enabled: true
     embedding:
       # Embedding API 配置（可选，默认使用 spring.ai.openai 配置）
-      # base-url: https://api.openai.com    # 或 Ollama: http://localhost:11434
-      # api-key: sk-xxx
-      model: text-embedding-3-small         # Ollama 可用: nomic-embed-text, bge-m3
-      dimensions: 1536                       # nomic-embed-text: 768, bge-m3: 1024
+      base-url: http://localhost:11434    # 或 Ollama: http://localhost:11434
+      api-key: ollama
+      model: bge-m3         # Ollama 可用: nomic-embed-text, bge-m3
+      dimensions: 1024                       # nomic-embed-text: 768, bge-m3: 1024
     vector-store:
-      type: simple                           # simple | milvus
+      type: simple                           # simple | tidb | milvus
+      # === TiDB Vector Search 配置（type=tidb 时启用）===
+      # tidb-table-name: a_knowledge_vectors  # 需先执行 db/schema_vector.sql
       # === Simple VectorStore 配置（内存 + 文件持久化）===
       persist-path: ./data/vectorstore
       top-k: 5

@@ -64,6 +64,9 @@ public class DocumentProcessor {
                 return 0;
             }
 
+            // 重新处理时先清理旧向量，避免重复入库
+            vectorStoreManager.deleteVectorsByDocCode(kbCode, docCode);
+
             // 添加到 VectorStore
             vectorStoreManager.addDocuments(kbCode, chunks);
 

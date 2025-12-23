@@ -87,7 +87,7 @@ public class RagProperties {
     public static class VectorStoreConfig {
         /**
          * VectorStore 类型
-         * 支持：simple, milvus
+         * 支持：simple, tidb, milvus
          * 默认：simple（内存存储）
          */
         private String type = "simple";
@@ -110,6 +110,16 @@ public class RagProperties {
          * 为空则不持久化
          */
         private String persistPath;
+
+        // ============ TiDB Vector Search 配置 ============
+
+        /**
+         * TiDB 向量表名
+         * 默认：a_knowledge_vectors
+         *
+         * 表结构参考：db/schema_vector.sql
+         */
+        private String tidbTableName = "a_knowledge_vectors";
 
         // ============ Milvus 配置 ============
 

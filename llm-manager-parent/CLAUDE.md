@@ -1230,7 +1230,7 @@ String response = llmChatAgent.chat(request);
 - ✅ 创建知识库管理功能
 - ✅ 集成 RetrievalAugmentationAdvisor
 - ✅ Embedding 配置独立化（支持自定义 baseUrl/apiKey）
-- ⏳ Milvus 向量数据库支持（骨架已完成，待实现）
+- ✅ Milvus 向量数据库支持
 
 #### 待完成功能（TODO）
 
@@ -1238,12 +1238,10 @@ String response = llmChatAgent.chat(request);
 |------|------|------|
 | **URL 文档解析** | 实现网页内容抓取，支持 URL 类型文档 | `DocumentProcessor.java:147` |
 | **文件解析（PDF/DOCX/HTML）** | 集成文档解析库（如 Tika），支持富文本文件 | `DocumentProcessor.java:154` |
-| **Milvus 实现** | 完成 Milvus VectorStore 集成 | `VectorStoreManager.java:292` |
 
 **实现建议**：
 - URL 解析：可使用 Jsoup 或 Spring AI 的 `WebDocumentReader`
 - 文件解析：可重新引入 `spring-ai-tika-document-reader` 依赖，或使用 Apache POI（Office 文档）+ PDFBox（PDF）
-- Milvus：添加 `spring-ai-milvus-store` 依赖
 
 #### 技术选型
 
@@ -2585,4 +2583,3 @@ curl http://localhost:8080/actuator/metrics/agent.execution.duration
 | Result<T> 返回类 | 统一返回格式 | ⏳ |
 | PageResult<T> | 分页响应格式 | ⏳ |
 | 参数校验统一 | @Valid + 自定义校验器 | ⏳ |
-

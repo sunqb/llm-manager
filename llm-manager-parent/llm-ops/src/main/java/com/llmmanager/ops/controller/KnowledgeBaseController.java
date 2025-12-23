@@ -238,6 +238,8 @@ public class KnowledgeBaseController {
         if (doc == null) {
             throw new RuntimeException("文档不存在: " + docCode);
         }
+        // 同步清理向量（避免向量库残留）
+        vectorStoreManager.deleteVectorsByDocCode(doc.getKbCode(), docCode);
         documentService.removeById(doc.getId());
     }
 
