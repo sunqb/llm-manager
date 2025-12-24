@@ -51,6 +51,12 @@ public class ToolRegistry {
     @Resource(name = "knowledgeTools")
     private Object knowledgeTools;
 
+    @Resource(name = "httpTools")
+    private Object httpTools;
+
+    @Resource(name = "webSearchTools")
+    private Object webSearchTools;
+
     @PostConstruct
     public void init() {
         // 注册所有工具
@@ -61,6 +67,8 @@ public class ToolRegistry {
         registerTool("news", newsTools);
         registerTool("datetime", dateTimeTools);
         registerTool("knowledge", knowledgeTools);
+        registerTool("http", httpTools);
+        registerTool("websearch", webSearchTools);
 
         log.info("[ToolRegistry] 工具注册完成，共 {} 个工具: {}", registeredToolNames.size(), registeredToolNames);
     }
@@ -145,4 +153,3 @@ public class ToolRegistry {
         return toolMap.size();
     }
 }
-

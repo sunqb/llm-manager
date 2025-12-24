@@ -31,6 +31,29 @@ public class ReactAgentConfigDTO {
      */
     private List<String> tools;
 
+    // ==================== MCP 工具配置（可选） ====================
+
+    /**
+     * 是否启用 MCP 工具（ToolCallback）
+     * <p>
+     * 说明：MCP 工具来自外部 MCP Server，需要先在 `a_mcp_servers` 配置并启用、连接成功后才可用。
+     */
+    private Boolean enableMcpTools;
+
+    /**
+     * 指定 MCP 服务器 code 列表（可选）
+     * <p>
+     * 为空时默认使用所有已连接的 MCP 服务器。
+     */
+    private List<String> mcpServerCodes;
+
+    /**
+     * MCP 工具名称白名单（可选）
+     * <p>
+     * 为空时不做过滤，使用所选服务器提供的全部 MCP 工具。
+     */
+    private List<String> mcpToolNames;
+
     // ==================== SEQUENTIAL 类型配置 ====================
 
     /**
@@ -84,6 +107,23 @@ public class ReactAgentConfigDTO {
          * 工具列表
          */
         private List<String> tools;
+
+        // ========== MCP 工具配置（可选，覆盖/补充全局设置） ==========
+
+        /**
+         * 是否启用 MCP 工具（为空则继承全局 enableMcpTools）
+         */
+        private Boolean enableMcpTools;
+
+        /**
+         * 指定 MCP 服务器 code 列表（为空则继承全局 mcpServerCodes）
+         */
+        private List<String> mcpServerCodes;
+
+        /**
+         * MCP 工具名称白名单（为空则继承全局 mcpToolNames）
+         */
+        private List<String> mcpToolNames;
     }
 
     /**
@@ -114,6 +154,23 @@ public class ReactAgentConfigDTO {
          */
         private List<String> tools;
 
+        // ========== MCP 工具配置（可选，覆盖/补充全局设置） ==========
+
+        /**
+         * 是否启用 MCP 工具（为空则继承全局 enableMcpTools）
+         */
+        private Boolean enableMcpTools;
+
+        /**
+         * 指定 MCP 服务器 code 列表（为空则继承全局 mcpServerCodes）
+         */
+        private List<String> mcpServerCodes;
+
+        /**
+         * MCP 工具名称白名单（为空则继承全局 mcpToolNames）
+         */
+        private List<String> mcpToolNames;
+
         /**
          * 是否为引用类型
          */
@@ -122,4 +179,3 @@ public class ReactAgentConfigDTO {
         }
     }
 }
-

@@ -1,6 +1,7 @@
 package com.llmmanager.agent.reactagent.factory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.llmmanager.agent.mcp.McpClientManager;
 import com.llmmanager.agent.reactagent.autonomous.SupervisorAgentTeam;
 import com.llmmanager.agent.reactagent.config.ReactAgentConfigDTO;
 import com.llmmanager.agent.reactagent.configurable.ConfigurableAgentWorkflow;
@@ -21,8 +22,10 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -40,6 +43,9 @@ public class ReactAgentFactory {
 
     @Resource
     private ToolRegistry toolRegistry;
+
+    @Resource
+    private McpClientManager mcpClientManager;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -77,7 +83,13 @@ public class ReactAgentFactory {
         try {
             ReactAgentConfigDTO dto = parseConfig(config.getAgentConfig());
 
-            List<ToolCallback> tools = toolRegistry.getToolCallbacks(dto.getTools());
+            List<ToolCallback> localTools = toolRegistry.getToolCallbacks(dto.getTools());
+            List<ToolCallback> mcpTools = resolveMcpToolCallbacks(
+                    dto.getEnableMcpTools(),
+                    dto.getMcpServerCodes(),
+                    dto.getMcpToolNames()
+            );
+            List<ToolCallback> tools = mergeToolCallbacks(localTools, mcpTools);
 
             return AgentWrapper.builder()
                     .name(config.getName())
@@ -100,7 +112,19 @@ public class ReactAgentFactory {
 
             List<AgentConfig> agentConfigs = new ArrayList<>();
             for (ReactAgentConfigDTO.AgentDefinition agentDef : dto.getAgents()) {
-                List<ToolCallback> tools = toolRegistry.getToolCallbacks(agentDef.getTools());
+                Boolean enableMcpTools = agentDef.getEnableMcpTools() != null
+                        ? agentDef.getEnableMcpTools()
+                        : dto.getEnableMcpTools();
+                List<String> mcpServerCodes = agentDef.getMcpServerCodes() != null
+                        ? agentDef.getMcpServerCodes()
+                        : dto.getMcpServerCodes();
+                List<String> mcpToolNames = agentDef.getMcpToolNames() != null
+                        ? agentDef.getMcpToolNames()
+                        : dto.getMcpToolNames();
+
+                List<ToolCallback> localTools = toolRegistry.getToolCallbacks(agentDef.getTools());
+                List<ToolCallback> mcpTools = resolveMcpToolCallbacks(enableMcpTools, mcpServerCodes, mcpToolNames);
+                List<ToolCallback> tools = mergeToolCallbacks(localTools, mcpTools);
 
                 AgentWrapper agent = AgentWrapper.builder()
                         .name(agentDef.getName())
@@ -147,7 +171,19 @@ public class ReactAgentFactory {
                     workerAgent = buildSingleAgent(workerDef.getRef(), chatModel);
                 } else {
                     // 内联定义
-                    List<ToolCallback> tools = toolRegistry.getToolCallbacks(workerDef.getTools());
+                    Boolean enableMcpTools = workerDef.getEnableMcpTools() != null
+                            ? workerDef.getEnableMcpTools()
+                            : dto.getEnableMcpTools();
+                    List<String> mcpServerCodes = workerDef.getMcpServerCodes() != null
+                            ? workerDef.getMcpServerCodes()
+                            : dto.getMcpServerCodes();
+                    List<String> mcpToolNames = workerDef.getMcpToolNames() != null
+                            ? workerDef.getMcpToolNames()
+                            : dto.getMcpToolNames();
+
+                    List<ToolCallback> localTools = toolRegistry.getToolCallbacks(workerDef.getTools());
+                    List<ToolCallback> mcpTools = resolveMcpToolCallbacks(enableMcpTools, mcpServerCodes, mcpToolNames);
+                    List<ToolCallback> tools = mergeToolCallbacks(localTools, mcpTools);
                     workerAgent = AgentWrapper.builder()
                             .name(workerDef.getName())
                             .chatModel(chatModel)
@@ -193,6 +229,100 @@ public class ReactAgentFactory {
         }
     }
 
+    private List<ToolCallback> resolveMcpToolCallbacks(Boolean enableMcpTools,
+                                                      List<String> mcpServerCodes,
+                                                      List<String> mcpToolNames) {
+        if (!Boolean.TRUE.equals(enableMcpTools) || mcpClientManager == null) {
+            return List.of();
+        }
+
+        List<ToolCallback> callbacks = new ArrayList<>();
+
+        if (mcpServerCodes != null && !mcpServerCodes.isEmpty()) {
+            for (String serverCode : mcpServerCodes) {
+                if (serverCode == null || serverCode.isBlank()) {
+                    continue;
+                }
+                ToolCallback[] serverCallbacks = mcpClientManager.getToolCallbacks(serverCode);
+                if (serverCallbacks != null && serverCallbacks.length > 0) {
+                    for (ToolCallback callback : serverCallbacks) {
+                        if (callback != null) {
+                            callbacks.add(callback);
+                        }
+                    }
+                }
+            }
+        } else {
+            ToolCallback[] allCallbacks = mcpClientManager.getAllToolCallbacks();
+            if (allCallbacks != null && allCallbacks.length > 0) {
+                for (ToolCallback callback : allCallbacks) {
+                    if (callback != null) {
+                        callbacks.add(callback);
+                    }
+                }
+            }
+        }
+
+        if (mcpToolNames == null || mcpToolNames.isEmpty() || callbacks.isEmpty()) {
+            return callbacks;
+        }
+
+        Set<String> allow = new HashSet<>();
+        for (String name : mcpToolNames) {
+            if (name != null && !name.isBlank()) {
+                allow.add(name.trim().toLowerCase());
+            }
+        }
+        if (allow.isEmpty()) {
+            return callbacks;
+        }
+
+        List<ToolCallback> filtered = new ArrayList<>();
+        for (ToolCallback callback : callbacks) {
+            if (callback == null || callback.getToolDefinition() == null) {
+                continue;
+            }
+            String toolName = callback.getToolDefinition().name();
+            if (toolName != null && allow.contains(toolName.toLowerCase())) {
+                filtered.add(callback);
+            }
+        }
+        return filtered;
+    }
+
+    private List<ToolCallback> mergeToolCallbacks(List<ToolCallback> first, List<ToolCallback> second) {
+        if ((first == null || first.isEmpty()) && (second == null || second.isEmpty())) {
+            return List.of();
+        }
+
+        List<ToolCallback> merged = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+
+        addUniqueToolCallbacks(merged, seen, first);
+        addUniqueToolCallbacks(merged, seen, second);
+
+        return merged;
+    }
+
+    private void addUniqueToolCallbacks(List<ToolCallback> merged, Set<String> seen, List<ToolCallback> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return;
+        }
+        for (ToolCallback callback : tools) {
+            if (callback == null || callback.getToolDefinition() == null) {
+                continue;
+            }
+            String name = callback.getToolDefinition().name();
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            String key = name.toLowerCase();
+            if (seen.add(key)) {
+                merged.add(callback);
+            }
+        }
+    }
+
     /**
      * 创建 ChatModel（根据 baseUrl 和 apiKey）
      */
@@ -229,4 +359,3 @@ public class ReactAgentFactory {
         return reactAgentMapper.selectByAgentType(agentType);
     }
 }
-
