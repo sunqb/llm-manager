@@ -139,8 +139,8 @@ llm:
     # ==================== 普通工具（本地 @Tool）====================
     # 注意：出于安全考虑默认关闭；启用时请配置白名单/搜索服务
     http:
-      enabled: false
-      allow-hosts: []                # 例：["example.com", "*.example.com"]
+      enabled: true
+      allow-hosts: ["*"]                # 例：["example.com", "*.example.com"]
       allow-private-network: false   # SSRF 风险：默认禁止访问内网/本机
       default-timeout-seconds: 20
       max-response-bytes: 1048576    # 1MB

@@ -2663,3 +2663,137 @@ curl http://localhost:8080/actuator/metrics/agent.execution.duration
 | Result<T> 返回类 | 统一返回格式 | ⏳ |
 | PageResult<T> | 分页响应格式 | ⏳ |
 | 参数校验统一 | @Valid + 自定义校验器 | ⏳ |
+
+### 3. ReactAgent 服务化 🔴 高优先级
+
+**目标**：将 ReactAgent 能力对外暴露为服务，供其他项目调用
+
+**背景**：有实际项目需要使用 ReactAgent 能力，需要提供标准化的服务接口
+
+#### 核心任务
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| REST API 接口 | `/api/external/react-agent/{slug}` | ✅ 已完成 |
+| OpenAI 兼容 API | `/v1/chat/completions` 格式 | ⏳ |
+| 流式输出支持 | SSE 流式响应（进度流） | ✅ 已完成 |
+| API Key 认证 | 复用现有认证机制 | ✅ 已完成 |
+| Java SDK | 封装 HTTP 调用的客户端库 | ⏳ |
+| 接口文档 | Swagger/OpenAPI 文档 | ⏳ |
+
+#### 已实现的 API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/external/react-agent/{slug}` | POST | 同步执行 ReactAgent |
+| `/api/external/react-agent/{slug}/stream` | POST | 流式执行（SSE 进度流） |
+| `/api/external/react-agent/list` | GET | 获取可用 Agent 列表 |
+| `/api/external/react-agent/{slug}` | GET | 获取 Agent 详情 |
+
+#### 调用示例
+
+**同步调用**：
+```bash
+curl -X POST https://your-domain/api/external/react-agent/universal-assistant \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "帮我查询北京天气"}'
+```
+
+**响应**：
+```json
+{
+  "code": 200,
+  "data": {
+    "success": true,
+    "result": "北京今天天气晴朗，温度25°C...",
+    "agentName": "全能助手",
+    "agentType": "SINGLE",
+    "slug": "universal-assistant",
+    "agentConfigName": "全能助手"
+  }
+}
+```
+
+**流式调用**：
+```bash
+curl -N -X POST https://your-domain/api/external/react-agent/universal-assistant/stream \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "帮我查询北京天气"}'
+```
+
+**SSE 事件流**：
+```
+event: start
+data: {"slug":"universal-assistant","agentName":"全能助手","agentType":"SINGLE","status":"processing"}
+
+event: progress
+data: {"step":"thinking","message":"Agent 正在分析问题..."}
+
+event: complete
+data: {"success":true,"result":"北京今天天气晴朗...","status":"completed"}
+
+data: [DONE]
+```
+
+**获取 Agent 列表**：
+```bash
+curl https://your-domain/api/external/react-agent/list \
+  -H "Authorization: Bearer sk-xxxx"
+```
+
+#### 待实现：OpenAI 兼容 API
+
+```java
+// 兼容 OpenAI SDK 调用
+@RestController
+@RequestMapping("/v1")
+public class OpenAiCompatibleController {
+
+    @PostMapping("/chat/completions")
+    public ResponseEntity<?> chatCompletions(@RequestBody ChatCompletionRequest request);
+
+    // model 格式: "react-agent/{slug}" 或 "agent/{slug}"
+}
+```
+
+**调用示例**（Python）：
+```python
+import openai
+
+client = openai.OpenAI(
+    api_key="your-api-key",
+    base_url="https://your-domain/v1"
+)
+
+response = client.chat.completions.create(
+    model="react-agent/universal-assistant",
+    messages=[{"role": "user", "content": "帮我查询北京天气"}]
+)
+```
+
+#### 待实现：Java SDK
+
+```java
+// 发布为 Maven 包: llm-manager-client
+LlmManagerClient client = new LlmManagerClient("https://your-domain", "sk-xxxx");
+ReactAgentResponse response = client.executeReactAgent("universal-assistant", "查询天气");
+```
+
+#### 实施计划
+
+1. **第 1 阶段**：REST API 基础接口 ✅ 已完成
+   - 新增 `ExternalReactAgentController`
+   - 同步/流式接口
+   - 复用 API Key 认证
+
+2. **第 2 阶段**：OpenAI 兼容层 ⏳
+   - 新增 `OpenAiCompatibleController`
+   - 支持 `/v1/chat/completions` 格式
+   - 流式输出兼容
+
+3. **第 3 阶段**：SDK 与文档 ⏳
+   - 新建 `llm-manager-client` 模块
+   - 发布 Maven 包
+   - 完善 API 文档

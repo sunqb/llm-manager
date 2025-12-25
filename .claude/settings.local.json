@@ -23,7 +23,8 @@
       "Bash(git rm:*)",
       "Bash(git commit:*)",
       "mcp__context7__resolve-library-id",
-      "mcp__context7__get-library-docs"
+      "mcp__context7__get-library-docs",
+      "mcp__auggie-mcp__codebase-retrieval"
     ],
     "deny": [],
     "ask": []

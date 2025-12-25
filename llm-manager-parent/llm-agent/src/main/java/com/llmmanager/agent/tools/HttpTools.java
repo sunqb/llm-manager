@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
 @Component
 public class HttpTools {
 
-    private static final int DEFAULT_MAX_CHARS = 20_000;
+    private static final int DEFAULT_MAX_CHARS = 100_000;
     private static final Pattern CHARSET_PATTERN = Pattern.compile("charset=([^;]+)", Pattern.CASE_INSENSITIVE);
 
     @Resource
@@ -44,7 +44,7 @@ public class HttpTools {
     @Tool(description = "通过 HTTP GET 抓取网页/接口的文本内容（安全限制：仅 http/https、域名白名单、默认禁止私网）。")
     public FetchResult fetchUrl(
             @ToolParam(description = "URL（仅支持 http/https）") String url,
-            @ToolParam(description = "最大返回字符数，默认 20000") int maxChars,
+            @ToolParam(description = "最大返回字符数，默认 100000") int maxChars,
             @ToolParam(description = "超时秒数，默认按配置 llm.tools.http.default-timeout-seconds") int timeoutSeconds) {
 
         if (!Boolean.TRUE.equals(httpToolsProperties.getEnabled())) {
