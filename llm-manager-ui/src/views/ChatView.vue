@@ -42,23 +42,23 @@ const messages = ref([])
 const userInput = ref('')
 const loading = ref(false)
 const chatContainer = ref(null) // Ref for auto-scrolling
-const conversationId = ref(null) // 会话ID，前端控制
+const conversationCode = ref(null) // 会话Code，前端控制
 
 // 生成不含"-"的 UUID
-const generateConversationId = () => {
+const generateConversationCode = () => {
     return crypto.randomUUID().replace(/-/g, '')
 }
 
 // 开始新对话
 const startNewConversation = () => {
-    conversationId.value = generateConversationId()
+    conversationCode.value = generateConversationCode()
     messages.value = []
 
     // 保存到 localStorage
-    localStorage.setItem('conversationId', conversationId.value)
+    localStorage.setItem('conversationCode', conversationCode.value)
     localStorage.setItem('chatMessages', JSON.stringify(messages.value))
 
-    console.log('[新对话] conversationId:', conversationId.value)
+    console.log('[新对话] conversationCode:', conversationCode.value)
 }
 
 const load = async () => {
@@ -82,13 +82,13 @@ const load = async () => {
     if (agents.value.length) selectedAgentSlug.value = agents.value[0].slug
 
     // 尝试从 localStorage 恢复会话
-    const savedConversationId = localStorage.getItem('conversationId')
+    const savedConversationCode = localStorage.getItem('conversationCode')
     const savedMessages = localStorage.getItem('chatMessages')
 
-    if (savedConversationId && savedMessages) {
-        conversationId.value = savedConversationId
+    if (savedConversationCode && savedMessages) {
+        conversationCode.value = savedConversationCode
         messages.value = JSON.parse(savedMessages)
-        console.log('[恢复会话] conversationId:', conversationId.value, '消息数:', messages.value.length)
+        console.log('[恢复会话] conversationCode:', conversationCode.value, '消息数:', messages.value.length)
     } else {
         // 初始化新对话
         startNewConversation()
@@ -184,7 +184,7 @@ const send = async () => {
         // 构建统一请求对象
         const request = {
             message: text,
-            conversationId: conversationId.value
+            conversationCode: conversationCode.value
         }
 
         // 根据模式设置参数

@@ -99,7 +99,7 @@ export default {
    * @param {string} request.message 用户消息（必填）
    * @param {number} request.modelId 模型ID（与 agentSlug 二选一）
    * @param {string} request.agentSlug 智能体标识（与 modelId 二选一）
-   * @param {string} request.conversationId 会话ID（可选）
+   * @param {string} request.conversationCode 会话Code（可选）
    * @param {boolean} request.enableTools 是否启用工具调用（默认 false）
    * @param {string[]} request.toolNames 工具名称列表（可选）
    * @param {string[]} request.mediaUrls 媒体 URL 列表（可选）
