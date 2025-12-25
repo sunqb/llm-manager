@@ -15,6 +15,11 @@ public interface AgentService {
     List<Agent> findAll();
 
     /**
+     * 查询所有启用的 Agent
+     */
+    List<Agent> findActiveAgents();
+
+    /**
      * 根据 ID 查询 Agent
      */
     Agent findById(Long id);

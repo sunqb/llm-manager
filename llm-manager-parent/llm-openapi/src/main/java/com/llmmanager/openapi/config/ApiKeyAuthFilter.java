@@ -30,8 +30,8 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Only protect /api/external/** endpoints
-        if (!path.startsWith("/api/external/")) {
+        // Only protect /api/external/** and /v1/** endpoints
+        if (!path.startsWith("/api/external/") && !path.startsWith("/v1/")) {
             filterChain.doFilter(request, response);
             return;
         }

@@ -2675,7 +2675,7 @@ curl http://localhost:8080/actuator/metrics/agent.execution.duration
 | 任务 | 说明 | 状态 |
 |------|------|------|
 | REST API 接口 | `/api/external/react-agent/{slug}` | ✅ 已完成 |
-| OpenAI 兼容 API | `/v1/chat/completions` 格式 | ⏳ |
+| OpenAI 兼容 API | `/v1/chat/completions` 格式 | ✅ 已完成 |
 | 流式输出支持 | SSE 流式响应（进度流） | ✅ 已完成 |
 | API Key 认证 | 复用现有认证机制 | ✅ 已完成 |
 | Java SDK | 封装 HTTP 调用的客户端库 | ⏳ |
@@ -2683,12 +2683,42 @@ curl http://localhost:8080/actuator/metrics/agent.execution.duration
 
 #### 已实现的 API 端点
 
+**REST API**:
+
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/external/react-agent/{slug}` | POST | 同步执行 ReactAgent |
 | `/api/external/react-agent/{slug}/stream` | POST | 流式执行（SSE 进度流） |
 | `/api/external/react-agent/list` | GET | 获取可用 Agent 列表 |
 | `/api/external/react-agent/{slug}` | GET | 获取 Agent 详情 |
+
+**OpenAI 兼容 API**:
+
+**LLM 模型 API**（直接调用模型）:
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/v1/chat/completions` | POST | Chat Completions（同步/流式） |
+| `/v1/chat/completions/stream` | POST | Chat Completions（显式流式） |
+| `/v1/models` | GET | 列出可用 LLM 模型 |
+| `/v1/models/{model}` | GET | 获取模型详情 |
+
+**ReactAgent API**（调用智能体）:
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/v1/agents` | GET | 列出所有可用 Agent |
+| `/v1/agents/{slug}` | GET | 获取 Agent 详情 |
+| `/v1/agents/{slug}/completions` | POST | Agent 对话（同步/流式） |
+| `/v1/agents/{slug}/completions/stream` | POST | Agent 对话（显式流式） |
+
+**Model 格式说明**（用于 `/v1/chat/completions`）:
+- `{modelId}` - 直接使用模型 ID（如 "1", "2"）
+- `{modelIdentifier}` - 使用模型标识（如 "gpt-4", "qwen-plus"）
+
+**Agent 调用说明**（用于 `/v1/agents/{slug}/completions`）:
+- `{slug}` - Agent 的唯一标识（如 "universal-assistant"）
+- 支持 SINGLE、SEQUENTIAL、SUPERVISOR 三种类型
 
 #### 调用示例
 
@@ -2743,34 +2773,167 @@ curl https://your-domain/api/external/react-agent/list \
   -H "Authorization: Bearer sk-xxxx"
 ```
 
-#### 待实现：OpenAI 兼容 API
+#### OpenAI 兼容 API 调用示例
 
-```java
-// 兼容 OpenAI SDK 调用
-@RestController
-@RequestMapping("/v1")
-public class OpenAiCompatibleController {
-
-    @PostMapping("/chat/completions")
-    public ResponseEntity<?> chatCompletions(@RequestBody ChatCompletionRequest request);
-
-    // model 格式: "react-agent/{slug}" 或 "agent/{slug}"
-}
-```
-
-**调用示例**（Python）：
+**Python 调用**：
 ```python
 import openai
+import requests
 
+# ========== 直接调用 LLM 模型 ==========
 client = openai.OpenAI(
     api_key="your-api-key",
     base_url="https://your-domain/v1"
 )
 
+# 使用模型 ID 调用
 response = client.chat.completions.create(
-    model="react-agent/universal-assistant",
-    messages=[{"role": "user", "content": "帮我查询北京天气"}]
+    model="1",  # 模型 ID
+    messages=[{"role": "user", "content": "你好"}]
 )
+print(response.choices[0].message.content)
+
+# 使用模型标识调用
+response = client.chat.completions.create(
+    model="gpt-4",  # 模型标识（如 modelIdentifier）
+    messages=[
+        {"role": "system", "content": "你是一个翻译助手"},
+        {"role": "user", "content": "翻译：Hello World"}
+    ]
+)
+
+# 流式调用
+for chunk in client.chat.completions.create(
+    model="1",
+    messages=[{"role": "user", "content": "写一首诗"}],
+    stream=True
+):
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+
+# ========== 调用 ReactAgent ==========
+# 注意：ReactAgent 使用独立的 /v1/agents 端点，不通过 OpenAI SDK
+
+# 获取 Agent 列表
+response = requests.get(
+    "https://your-domain/v1/agents",
+    headers={"Authorization": "Bearer sk-xxxx"}
+)
+agents = response.json()
+
+# 同步调用 Agent（支持 SINGLE/SEQUENTIAL/SUPERVISOR）
+response = requests.post(
+    "https://your-domain/v1/agents/universal-assistant/completions",
+    headers={
+        "Authorization": "Bearer sk-xxxx",
+        "Content-Type": "application/json"
+    },
+    json={
+        "messages": [{"role": "user", "content": "帮我查询北京天气"}]
+    }
+)
+print(response.json()["choices"][0]["message"]["content"])
+
+# 流式调用 Agent
+response = requests.post(
+    "https://your-domain/v1/agents/universal-assistant/completions",
+    headers={
+        "Authorization": "Bearer sk-xxxx",
+        "Content-Type": "application/json"
+    },
+    json={
+        "messages": [{"role": "user", "content": "写一篇关于 AI 的文章"}],
+        "stream": True
+    },
+    stream=True
+)
+for line in response.iter_lines():
+    if line:
+        print(line.decode())
+```
+
+**Java 调用**（使用 HTTP Client）：
+```java
+// ========== 直接调用 LLM 模型 ==========
+HttpClient client = HttpClient.newHttpClient();
+String requestBody = """
+    {
+        "model": "1",
+        "messages": [{"role": "user", "content": "你好"}]
+    }
+    """;
+
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("https://your-domain/v1/chat/completions"))
+    .header("Authorization", "Bearer sk-xxxx")
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+    .build();
+
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+System.out.println(response.body());
+
+// ========== 调用 ReactAgent ==========
+String agentRequestBody = """
+    {
+        "messages": [{"role": "user", "content": "帮我查询北京天气"}]
+    }
+    """;
+
+HttpRequest agentRequest = HttpRequest.newBuilder()
+    .uri(URI.create("https://your-domain/v1/agents/universal-assistant/completions"))
+    .header("Authorization", "Bearer sk-xxxx")
+    .header("Content-Type", "application/json")
+    .POST(HttpRequest.BodyPublishers.ofString(agentRequestBody))
+    .build();
+
+HttpResponse<String> agentResponse = client.send(agentRequest, HttpResponse.BodyHandlers.ofString());
+System.out.println(agentResponse.body());
+```
+
+**curl 调用**：
+```bash
+# ========== 直接调用 LLM 模型 ==========
+# 同步调用
+curl -X POST https://your-domain/v1/chat/completions \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "1",
+    "messages": [{"role": "user", "content": "你好"}]
+  }'
+
+# 流式调用
+curl -N -X POST https://your-domain/v1/chat/completions \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user", "content": "写一首诗"}],
+    "stream": true
+  }'
+
+# ========== 调用 ReactAgent ==========
+# 获取 Agent 列表
+curl https://your-domain/v1/agents \
+  -H "Authorization: Bearer sk-xxxx"
+
+# 同步调用 Agent
+curl -X POST https://your-domain/v1/agents/universal-assistant/completions \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "帮我查询北京天气"}]
+  }'
+
+# 流式调用 Agent
+curl -N -X POST https://your-domain/v1/agents/universal-assistant/completions \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "研究人工智能的发展趋势"}],
+    "stream": true
+  }'
 ```
 
 #### 待实现：Java SDK
@@ -2778,7 +2941,12 @@ response = client.chat.completions.create(
 ```java
 // 发布为 Maven 包: llm-manager-client
 LlmManagerClient client = new LlmManagerClient("https://your-domain", "sk-xxxx");
+
+// 调用 ReactAgent
 ReactAgentResponse response = client.executeReactAgent("universal-assistant", "查询天气");
+
+// 直接调用模型
+ChatResponse chatResponse = client.chat("gpt-4", "你好");
 ```
 
 #### 实施计划
@@ -2788,9 +2956,13 @@ ReactAgentResponse response = client.executeReactAgent("universal-assistant", "�
    - 同步/流式接口
    - 复用 API Key 认证
 
-2. **第 2 阶段**：OpenAI 兼容层 ⏳
-   - 新增 `OpenAiCompatibleController`
-   - 支持 `/v1/chat/completions` 格式
+2. **第 2 阶段**：OpenAI 兼容层 ✅ 已完成
+   - 新增 `OpenAiCompatibleController`（LLM 模型调用）
+   - 新增 `OpenAiAgentsController`（ReactAgent 调用）
+   - API 架构分离：
+     - `/v1/chat/completions` → 直接调用 LLM 模型
+     - `/v1/agents/{slug}/completions` → 调用 ReactAgent
+   - 支持三种 ReactAgent 类型（SINGLE/SEQUENTIAL/SUPERVISOR）
    - 流式输出兼容
 
 3. **第 3 阶段**：SDK 与文档 ⏳

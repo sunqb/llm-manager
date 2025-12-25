@@ -62,6 +62,16 @@ public class LlmExecutionService {
     }
 
     /**
+     * 普通对话（支持 systemPrompt，用于 OpenAI 兼容 API）
+     */
+    public String chat(Long modelId, String userMessage, String conversationCode, String systemPrompt) {
+        LlmModel model = getModel(modelId);
+        Channel channel = getChannel(model);
+        ChatRequest request = buildRequest(channel, model, userMessage, systemPrompt, model.getTemperature());
+        return llmChatAgent.chat(request, conversationCode);
+    }
+
+    /**
      * 带工具调用的对话
      */
     public String chatWithTools(Long modelId, String userMessage, String conversationCode, List<String> toolNames) {
@@ -130,6 +140,15 @@ public class LlmExecutionService {
      */
     public Flux<ChatStreamChunk> stream(Long modelId, String userMessage, String conversationCode) {
         return stream(modelId, userMessage, conversationCode, null, null);
+    }
+
+    /**
+     * 流式对话（支持 systemPrompt，用于 OpenAI 兼容 API）
+     */
+    public Flux<ChatStreamChunk> streamChat(Long modelId, String userMessage, String conversationCode, String systemPrompt) {
+        LlmModel model = getModel(modelId);
+        return executeStream(model, userMessage, systemPrompt, model.getTemperature(), conversationCode,
+                null, false, null, null, null, null);
     }
 
     /**

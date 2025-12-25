@@ -22,6 +22,13 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
     }
 
     @Override
+    public List<Agent> findActiveAgents() {
+        // Agent 没有 isActive 字段，返回所有非删除记录
+        // MyBatis-Plus 的 @TableLogic 会自动过滤已删除记录
+        return list();
+    }
+
+    @Override
     public Agent findById(Long id) {
         return getById(id);
     }

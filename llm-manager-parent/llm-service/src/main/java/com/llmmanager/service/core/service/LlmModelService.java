@@ -38,4 +38,9 @@ public interface LlmModelService {
      * 根据 ID 获取模型（MyBatis-Plus 方法）
      */
     LlmModel getById(Long id);
+
+    /**
+     * 根据模型标识符查询（如 gpt-4, qwen-plus）
+     */
+    LlmModel findByModelIdentifier(String modelIdentifier);
 }
