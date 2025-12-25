@@ -6,6 +6,9 @@ import com.llmmanager.agent.storage.core.entity.KnowledgeBase;
 import com.llmmanager.agent.storage.core.entity.KnowledgeDocument;
 import com.llmmanager.agent.storage.core.service.KnowledgeBaseService;
 import com.llmmanager.agent.storage.core.service.KnowledgeDocumentService;
+import com.llmmanager.common.exception.BusinessException;
+import com.llmmanager.common.result.Result;
+import com.llmmanager.common.result.ResultCode;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -46,79 +49,86 @@ public class KnowledgeBaseController {
      * 获取所有知识库
      */
     @GetMapping
-    public List<KnowledgeBase> getAllKnowledgeBases() {
-        return knowledgeBaseService.list();
+    public Result<List<KnowledgeBase>> getAllKnowledgeBases() {
+        return Result.success(knowledgeBaseService.list());
     }
 
     /**
      * 获取已启用的知识库
      */
     @GetMapping("/enabled")
-    public List<KnowledgeBase> getEnabledKnowledgeBases() {
-        return knowledgeBaseService.listAllEnabled();
+    public Result<List<KnowledgeBase>> getEnabledKnowledgeBases() {
+        return Result.success(knowledgeBaseService.listAllEnabled());
     }
 
     /**
      * 获取公开的知识库
      */
     @GetMapping("/public")
-    public List<KnowledgeBase> getPublicKnowledgeBases() {
-        return knowledgeBaseService.listAllPublic();
+    public Result<List<KnowledgeBase>> getPublicKnowledgeBases() {
+        return Result.success(knowledgeBaseService.listAllPublic());
     }
 
     /**
      * 根据 ID 获取知识库
      */
     @GetMapping("/{id}")
-    public KnowledgeBase getKnowledgeBaseById(@PathVariable Long id) {
+    public Result<KnowledgeBase> getKnowledgeBaseById(@PathVariable Long id) {
         KnowledgeBase kb = knowledgeBaseService.getById(id);
         if (kb == null) {
-            throw new RuntimeException("知识库不存在: " + id);
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + id);
         }
-        return kb;
+        return Result.success(kb);
     }
 
     /**
      * 根据 kbCode 获取知识库
      */
     @GetMapping("/code/{kbCode}")
-    public KnowledgeBase getKnowledgeBaseByCode(@PathVariable String kbCode) {
+    public Result<KnowledgeBase> getKnowledgeBaseByCode(@PathVariable String kbCode) {
         KnowledgeBase kb = knowledgeBaseService.getByKbCode(kbCode);
         if (kb == null) {
-            throw new RuntimeException("知识库不存在: " + kbCode);
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + kbCode);
         }
-        return kb;
+        return Result.success(kb);
     }
 
     /**
      * 创建知识库
      */
     @PostMapping
-    public KnowledgeBase createKnowledgeBase(@RequestBody CreateKnowledgeBaseRequest request) {
-        return knowledgeBaseService.create(request.name, request.description, request.kbType);
+    public Result<KnowledgeBase> createKnowledgeBase(@RequestBody CreateKnowledgeBaseRequest request) {
+        return Result.success(knowledgeBaseService.create(request.name, request.description, request.kbType));
     }
 
     /**
      * 更新知识库
      */
     @PutMapping("/{id}")
-    public KnowledgeBase updateKnowledgeBase(@PathVariable Long id, @RequestBody KnowledgeBase updated) {
-        KnowledgeBase existing = getKnowledgeBaseById(id);
+    public Result<KnowledgeBase> updateKnowledgeBase(@PathVariable Long id, @RequestBody KnowledgeBase updated) {
+        KnowledgeBase existing = knowledgeBaseService.getById(id);
+        if (existing == null) {
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + id);
+        }
         updated.setId(id);
         updated.setKbCode(existing.getKbCode());
         knowledgeBaseService.updateById(updated);
-        return knowledgeBaseService.getById(id);
+        return Result.success(knowledgeBaseService.getById(id));
     }
 
     /**
      * 删除知识库
      */
     @DeleteMapping("/{id}")
-    public void deleteKnowledgeBase(@PathVariable Long id) {
-        KnowledgeBase kb = getKnowledgeBaseById(id);
+    public Result<Void> deleteKnowledgeBase(@PathVariable Long id) {
+        KnowledgeBase kb = knowledgeBaseService.getById(id);
+        if (kb == null) {
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + id);
+        }
         // 删除关联的 VectorStore
         vectorStoreManager.removeVectorStore(kb.getKbCode());
         knowledgeBaseService.removeById(id);
+        return Result.success();
     }
 
     // ==================== 文档管理 ====================
@@ -127,120 +137,108 @@ public class KnowledgeBaseController {
      * 获取知识库的所有文档
      */
     @GetMapping("/{kbCode}/documents")
-    public List<KnowledgeDocument> getDocuments(@PathVariable String kbCode) {
-        return documentService.listByKbCode(kbCode);
+    public Result<List<KnowledgeDocument>> getDocuments(@PathVariable String kbCode) {
+        return Result.success(documentService.listByKbCode(kbCode));
     }
 
     /**
      * 添加文本文档
      */
     @PostMapping("/{kbCode}/documents/text")
-    public KnowledgeDocument addTextDocument(@PathVariable String kbCode,
-                                              @RequestBody AddTextDocumentRequest request) {
-        // 检查知识库是否存在
+    public Result<KnowledgeDocument> addTextDocument(@PathVariable String kbCode,
+                                                      @RequestBody AddTextDocumentRequest request) {
         if (knowledgeBaseService.getByKbCode(kbCode) == null) {
-            throw new RuntimeException("知识库不存在: " + kbCode);
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + kbCode);
         }
 
         KnowledgeDocument doc = documentService.addTextDocument(
                 kbCode, request.title, request.content, request.metadata);
 
-        // 异步处理文档（可选：改为队列处理）
         if (Boolean.TRUE.equals(request.processNow)) {
             documentProcessor.processDocument(doc);
         }
 
-        return doc;
+        return Result.success(doc);
     }
 
     /**
      * 添加 Markdown 文档
      */
     @PostMapping("/{kbCode}/documents/markdown")
-    public KnowledgeDocument addMarkdownDocument(@PathVariable String kbCode,
-                                                  @RequestBody AddTextDocumentRequest request) {
-        // 检查知识库是否存在
+    public Result<KnowledgeDocument> addMarkdownDocument(@PathVariable String kbCode,
+                                                          @RequestBody AddTextDocumentRequest request) {
         if (knowledgeBaseService.getByKbCode(kbCode) == null) {
-            throw new RuntimeException("知识库不存在: " + kbCode);
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + kbCode);
         }
 
         KnowledgeDocument doc = documentService.addMarkdownDocument(
                 kbCode, request.title, request.content, request.metadata);
 
-        // 异步处理文档
         if (Boolean.TRUE.equals(request.processNow)) {
             documentProcessor.processDocument(doc);
         }
 
-        return doc;
+        return Result.success(doc);
     }
 
     /**
      * 添加 URL 文档
      */
     @PostMapping("/{kbCode}/documents/url")
-    public KnowledgeDocument addUrlDocument(@PathVariable String kbCode,
-                                             @RequestBody AddUrlDocumentRequest request) {
-        // 检查知识库是否存在
+    public Result<KnowledgeDocument> addUrlDocument(@PathVariable String kbCode,
+                                                     @RequestBody AddUrlDocumentRequest request) {
         if (knowledgeBaseService.getByKbCode(kbCode) == null) {
-            throw new RuntimeException("知识库不存在: " + kbCode);
+            throw new BusinessException(ResultCode.KNOWLEDGE_BASE_NOT_FOUND, "知识库不存在: " + kbCode);
         }
 
-        return documentService.addUrlDocument(kbCode, request.title, request.sourceUrl, request.metadata);
+        return Result.success(documentService.addUrlDocument(kbCode, request.title, request.sourceUrl, request.metadata));
     }
 
     /**
      * 处理文档（执行分割和向量化）
      */
     @PostMapping("/documents/{docCode}/process")
-    public Map<String, Object> processDocument(@PathVariable String docCode) {
+    public Result<Map<String, Object>> processDocument(@PathVariable String docCode) {
         KnowledgeDocument doc = documentService.getByDocCode(docCode);
         if (doc == null) {
-            throw new RuntimeException("文档不存在: " + docCode);
+            throw new BusinessException(ResultCode.DOCUMENT_NOT_FOUND, "文档不存在: " + docCode);
         }
 
-        Map<String, Object> result = new HashMap<>();
         try {
             int chunkCount = documentProcessor.processDocument(doc);
-            result.put("success", true);
+            Map<String, Object> result = new HashMap<>();
             result.put("chunkCount", chunkCount);
-            result.put("message", "处理成功，生成 " + chunkCount + " 个文本块");
+            return Result.success(result, "处理成功，生成 " + chunkCount + " 个文本块");
         } catch (Exception e) {
             log.error("[KnowledgeBase] 处理文档失败: {}", e.getMessage(), e);
-            result.put("success", false);
-            result.put("message", "处理失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.DOCUMENT_PROCESS_FAILED, "处理失败: " + e.getMessage());
         }
-        return result;
     }
 
     /**
      * 批量处理待处理的文档
      */
     @PostMapping("/documents/process-pending")
-    public Map<String, Object> processPendingDocuments(
+    public Result<Map<String, Object>> processPendingDocuments(
             @RequestParam(defaultValue = "10") int limit) {
-        Map<String, Object> result = new HashMap<>();
-
         int successCount = documentProcessor.processPendingDocuments(limit);
-        result.put("success", true);
+        Map<String, Object> result = new HashMap<>();
         result.put("processedCount", successCount);
-        result.put("message", "处理完成，成功 " + successCount + " 个");
-
-        return result;
+        return Result.success(result, "处理完成，成功 " + successCount + " 个");
     }
 
     /**
      * 删除文档
      */
     @DeleteMapping("/documents/{docCode}")
-    public void deleteDocument(@PathVariable String docCode) {
+    public Result<Void> deleteDocument(@PathVariable String docCode) {
         KnowledgeDocument doc = documentService.getByDocCode(docCode);
         if (doc == null) {
-            throw new RuntimeException("文档不存在: " + docCode);
+            throw new BusinessException(ResultCode.DOCUMENT_NOT_FOUND, "文档不存在: " + docCode);
         }
-        // 同步清理向量（避免向量库残留）
         vectorStoreManager.deleteVectorsByDocCode(doc.getKbCode(), docCode);
         documentService.removeById(doc.getId());
+        return Result.success();
     }
 
     // ==================== 检索功能 ====================
@@ -249,14 +247,14 @@ public class KnowledgeBaseController {
      * 在知识库中检索相似文档
      */
     @PostMapping("/{kbCode}/search")
-    public List<Map<String, Object>> searchDocuments(
+    public Result<List<Map<String, Object>>> searchDocuments(
             @PathVariable String kbCode,
             @RequestBody SearchRequest request) {
 
         List<Document> documents = vectorStoreManager.similaritySearch(
                 kbCode, request.query, request.topK != null ? request.topK : 5);
 
-        return documents.stream()
+        List<Map<String, Object>> results = documents.stream()
                 .map(doc -> {
                     Map<String, Object> result = new HashMap<>();
                     result.put("content", doc.getText());
@@ -264,17 +262,19 @@ public class KnowledgeBaseController {
                     return result;
                 })
                 .toList();
+
+        return Result.success(results);
     }
 
     /**
      * 在全局知识库中检索
      */
     @PostMapping("/global/search")
-    public List<Map<String, Object>> searchGlobalDocuments(@RequestBody SearchRequest request) {
+    public Result<List<Map<String, Object>>> searchGlobalDocuments(@RequestBody SearchRequest request) {
         List<Document> documents = vectorStoreManager.similaritySearchGlobal(
                 request.query, request.topK != null ? request.topK : 5);
 
-        return documents.stream()
+        List<Map<String, Object>> results = documents.stream()
                 .map(doc -> {
                     Map<String, Object> result = new HashMap<>();
                     result.put("content", doc.getText());
@@ -282,6 +282,8 @@ public class KnowledgeBaseController {
                     return result;
                 })
                 .toList();
+
+        return Result.success(results);
     }
 
     // ==================== 知识库操作 ====================
@@ -290,27 +292,19 @@ public class KnowledgeBaseController {
      * 清空知识库
      */
     @PostMapping("/{kbCode}/clear")
-    public Map<String, Object> clearKnowledgeBase(@PathVariable String kbCode) {
-        Map<String, Object> result = new HashMap<>();
-
-        // 清空 VectorStore
+    public Result<Void> clearKnowledgeBase(@PathVariable String kbCode) {
         vectorStoreManager.clearVectorStore(kbCode);
-
-        // 更新统计
         knowledgeBaseService.updateStatistics(kbCode);
-
-        result.put("success", true);
-        result.put("message", "知识库已清空");
-        return result;
+        return Result.success(null, "知识库已清空");
     }
 
     /**
      * 更新知识库统计信息
      */
     @PostMapping("/{kbCode}/refresh-stats")
-    public KnowledgeBase refreshStats(@PathVariable String kbCode) {
+    public Result<KnowledgeBase> refreshStats(@PathVariable String kbCode) {
         knowledgeBaseService.updateStatistics(kbCode);
-        return knowledgeBaseService.getByKbCode(kbCode);
+        return Result.success(knowledgeBaseService.getByKbCode(kbCode));
     }
 
     // ==================== 请求 DTO ====================

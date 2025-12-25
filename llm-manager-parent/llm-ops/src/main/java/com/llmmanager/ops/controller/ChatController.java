@@ -3,6 +3,9 @@ package com.llmmanager.ops.controller;
 import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.agent.message.MediaMessage;
 import com.llmmanager.agent.storage.core.service.MediaFileService;
+import com.llmmanager.common.exception.BusinessException;
+import com.llmmanager.common.result.Result;
+import com.llmmanager.common.result.ResultCode;
 import com.llmmanager.ops.dto.StreamChatRequest;
 import com.llmmanager.service.dto.StreamResponseFormatter;
 import com.llmmanager.service.core.entity.Agent;
@@ -19,7 +22,6 @@ import reactor.core.publisher.Flux;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -193,50 +195,54 @@ public class ChatController {
      * 同步对话接口
      */
     @PostMapping("/{modelId}")
-    public String chat(@PathVariable Long modelId, @RequestBody String message) {
-        return executionService.chat(modelId, message);
+    public Result<String> chat(@PathVariable Long modelId, @RequestBody String message) {
+        try {
+            String response = executionService.chat(modelId, message);
+            return Result.success(response);
+        } catch (Exception e) {
+            log.error("[ChatController] 同步对话失败", e);
+            throw new BusinessException(ResultCode.CHAT_FAILED, "对话失败: " + e.getMessage());
+        }
     }
 
     /**
      * 获取所有可用的工具列表
      */
     @GetMapping("/tools")
-    public Map<String, Object> getAvailableTools() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("tools", toolFunctionManager.getAllTools());
-        return response;
+    public Result<Map<String, Object>> getAvailableTools() {
+        return Result.success(Map.of(
+                "tools", toolFunctionManager.getAllTools(),
+                "count", toolFunctionManager.getToolCount()
+        ));
     }
 
     /**
      * 同步工具调用对话
      */
     @PostMapping("/{modelId}/with-tools")
-    public Map<String, Object> chatWithTools(
+    public Result<Map<String, Object>> chatWithTools(
             @PathVariable Long modelId,
             @RequestBody String message,
             @RequestParam(required = false) String conversationCode,
             @RequestParam(required = false) List<String> toolNames) {
 
-        Map<String, Object> response = new HashMap<>();
         try {
             String llmResponse = executionService.chatWithTools(modelId, message, conversationCode, toolNames);
-            response.put("success", true);
-            response.put("message", llmResponse);
-            response.put("toolsUsed", toolNames != null ? toolNames : toolFunctionManager.getAllToolNames());
+            return Result.success(Map.of(
+                    "message", llmResponse,
+                    "toolsUsed", toolNames != null ? toolNames : toolFunctionManager.getAllToolNames()
+            ));
         } catch (Exception e) {
             log.error("[ChatController] 工具调用对话失败", e);
-            response.put("success", false);
-            response.put("error", "对话失败: " + e.getMessage());
+            throw new BusinessException(ResultCode.CHAT_FAILED, "工具调用对话失败: " + e.getMessage());
         }
-        return response;
     }
 
     /**
      * 同步多模态对话
      */
     @PostMapping("/{modelId}/with-media/sync")
-    public Map<String, Object> chatWithMediaSync(
+    public Result<Map<String, Object>> chatWithMediaSync(
             @PathVariable Long modelId,
             @RequestParam String message,
             @RequestParam List<String> mediaUrls,
@@ -249,7 +255,10 @@ public class ChatController {
                 .map(String::trim)
                 .toList();
 
-        Map<String, Object> response = new HashMap<>();
+        if (validUrls.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "没有有效的媒体URL");
+        }
+
         try {
             List<MediaMessage.MediaContent> mediaContents = new ArrayList<>();
             for (String url : validUrls) {
@@ -257,15 +266,12 @@ public class ChatController {
             }
 
             String result = executionService.chatWithMedia(modelId, message, mediaContents, conversationCode);
-            response.put("success", true);
-            response.put("message", result);
-
             saveMediaUrls(conversationCode, validUrls);
+
+            return Result.success(Map.of("message", result));
         } catch (Exception e) {
             log.error("[ChatController] 同步多模态对话失败", e);
-            response.put("success", false);
-            response.put("error", e.getMessage());
+            throw new BusinessException(ResultCode.CHAT_FAILED, "多模态对话失败: " + e.getMessage());
         }
-        return response;
     }
 }

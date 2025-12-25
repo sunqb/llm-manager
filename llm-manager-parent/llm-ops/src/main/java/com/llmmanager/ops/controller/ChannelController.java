@@ -1,5 +1,8 @@
 package com.llmmanager.ops.controller;
 
+import com.llmmanager.common.exception.BusinessException;
+import com.llmmanager.common.result.Result;
+import com.llmmanager.common.result.ResultCode;
 import com.llmmanager.service.core.entity.Channel;
 import com.llmmanager.service.core.service.ChannelService;
 import org.springframework.web.bind.annotation.*;
@@ -15,38 +18,42 @@ public class ChannelController {
     private ChannelService channelService;
 
     @GetMapping
-    public List<Channel> getAll() {
-        return channelService.findAll();
+    public Result<List<Channel>> getAll() {
+        return Result.success(channelService.findAll());
     }
 
     @PostMapping
-    public Channel create(@RequestBody Channel channel) {
-        return channelService.create(channel);
+    public Result<Channel> create(@RequestBody Channel channel) {
+        return Result.success(channelService.create(channel));
     }
 
     @GetMapping("/{id}")
-    public Channel get(@PathVariable Long id) {
+    public Result<Channel> get(@PathVariable Long id) {
         Channel channel = channelService.findById(id);
         if (channel == null) {
-            throw new RuntimeException("Not found");
+            throw new BusinessException(ResultCode.CHANNEL_NOT_FOUND, "渠道不存在: " + id);
         }
-        return channel;
+        return Result.success(channel);
     }
 
     @PutMapping("/{id}")
-    public Channel update(@PathVariable Long id, @RequestBody Channel updated) {
+    public Result<Channel> update(@PathVariable Long id, @RequestBody Channel updated) {
         // 验证ID存在
-        Channel existing = get(id);
+        Channel existing = channelService.findById(id);
+        if (existing == null) {
+            throw new BusinessException(ResultCode.CHANNEL_NOT_FOUND, "渠道不存在: " + id);
+        }
 
-        // 设置ID后直接更新，MyBatis-Plus 会自动忽略 null 字段
+        // 设置ID后直接更新
         updated.setId(id);
         channelService.update(updated);
 
-        return channelService.findById(id);
+        return Result.success(channelService.findById(id));
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id) {
         channelService.delete(id);
+        return Result.success();
     }
 }

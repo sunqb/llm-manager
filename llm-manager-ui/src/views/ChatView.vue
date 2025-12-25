@@ -70,9 +70,9 @@ const load = async () => {
     models.value = mRes.data
     agents.value = aRes.data
 
-    // 加载工具列表
-    if (toolsRes.data.success) {
-        availableTools.value = toolsRes.data.tools || {}
+    // 加载工具列表（拦截器已解包 data 字段）
+    if (toolsRes.data && toolsRes.data.tools) {
+        availableTools.value = toolsRes.data.tools
         // 默认选中所有工具
         selectedTools.value = Object.keys(availableTools.value)
         console.log('[工具列表] 已加载:', selectedTools.value)
@@ -331,6 +331,22 @@ onUnmounted(() => {
                             </button>
                         </div>
                         <div class="p-1">
+                            <!-- 全部选项 -->
+                            <label
+                                class="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-indigo-50 cursor-pointer border-b border-slate-100 mb-1"
+                            >
+                                <input
+                                    type="checkbox"
+                                    :checked="selectedTools.length === Object.keys(availableTools).length"
+                                    @change="toggleAllTools"
+                                    class="mt-0.5 w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-2 focus:ring-indigo-500"
+                                />
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-sm text-indigo-600 font-medium">全部</div>
+                                    <div class="text-xs text-slate-400">选择所有工具</div>
+                                </div>
+                            </label>
+                            <!-- 单个工具选项 -->
                             <label
                                 v-for="(desc, name) in availableTools"
                                 :key="name"

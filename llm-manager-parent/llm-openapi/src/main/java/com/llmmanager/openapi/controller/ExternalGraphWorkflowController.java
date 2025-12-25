@@ -6,6 +6,9 @@ import com.llmmanager.agent.storage.core.service.GraphWorkflowService;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchProgress;
 import com.llmmanager.agent.graph.workflow.DeepResearchWorkflow.ResearchResult;
 import com.llmmanager.agent.storage.core.entity.GraphWorkflow;
+import com.llmmanager.common.exception.BusinessException;
+import com.llmmanager.common.result.Result;
+import com.llmmanager.common.result.ResultCode;
 import com.llmmanager.service.orchestration.GraphExecutionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -43,18 +46,23 @@ public class ExternalGraphWorkflowController {
      * 请求体：{"question":"..."}
      */
     @PostMapping("/research/{modelId}")
-    public Map<String, Object> research(
+    public Result<ResearchResult> research(
             @PathVariable Long modelId,
             @RequestBody Map<String, String> payload) {
 
         String question = payload.get("question");
         if (!StringUtils.hasText(question)) {
-            throw new IllegalArgumentException("question is required");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "question is required");
         }
 
         log.info("[ExternalGraph] 深度研究请求, modelId: {}, question: {}", modelId, question);
-        ResearchResult result = graphExecutionService.deepResearch(modelId, question);
-        return Map.of("success", true, "result", result);
+        try {
+            ResearchResult result = graphExecutionService.deepResearch(modelId, question);
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("[ExternalGraph] 深度研究失败", e);
+            throw new BusinessException(ResultCode.WORKFLOW_EXECUTION_FAILED, "Deep research failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -63,24 +71,33 @@ public class ExternalGraphWorkflowController {
      * 请求体：{"question":"..."}
      */
     @PostMapping("/research/by-slug/{slug}")
-    public Map<String, Object> researchBySlug(
+    public Result<ResearchResult> researchBySlug(
             @PathVariable String slug,
             @RequestBody Map<String, String> payload) {
 
         String question = payload.get("question");
         if (!StringUtils.hasText(question)) {
-            throw new IllegalArgumentException("question is required");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "question is required");
         }
 
         log.info("[ExternalGraph] 深度研究请求, workflowSlug: {}, question: {}", slug, question);
         GraphWorkflow workflow = graphWorkflowService.getWorkflowBySlug(slug);
-        Long modelId = workflow.getLlmModelId();
-        if (modelId == null) {
-            throw new IllegalArgumentException("工作流未配置默认模型: " + slug);
+        if (workflow == null) {
+            throw new BusinessException(ResultCode.WORKFLOW_NOT_FOUND, "Workflow not found: " + slug);
         }
 
-        ResearchResult result = graphExecutionService.deepResearch(modelId, question);
-        return Map.of("success", true, "result", result);
+        Long modelId = workflow.getLlmModelId();
+        if (modelId == null) {
+            throw new BusinessException(ResultCode.WORKFLOW_CONFIG_ERROR, "Workflow has no default model: " + slug);
+        }
+
+        try {
+            ResearchResult result = graphExecutionService.deepResearch(modelId, question);
+            return Result.success(result);
+        } catch (Exception e) {
+            log.error("[ExternalGraph] 深度研究失败", e);
+            throw new BusinessException(ResultCode.WORKFLOW_EXECUTION_FAILED, "Deep research failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -169,18 +186,23 @@ public class ExternalGraphWorkflowController {
      * 请求体：{"question":"..."}
      */
     @PostMapping("/research/{modelId}/with-progress")
-    public Map<String, Object> researchWithProgress(
+    public Result<List<ResearchProgress>> researchWithProgress(
             @PathVariable Long modelId,
             @RequestBody Map<String, String> payload) {
 
         String question = payload.get("question");
         if (!StringUtils.hasText(question)) {
-            throw new IllegalArgumentException("question is required");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "question is required");
         }
 
         log.info("[ExternalGraph] 带进度深度研究请求, modelId: {}, question: {}", modelId, question);
-        List<ResearchProgress> progressList = graphExecutionService.deepResearchWithProgress(modelId, question);
-        return Map.of("success", true, "progress", progressList);
+        try {
+            List<ResearchProgress> progressList = graphExecutionService.deepResearchWithProgress(modelId, question);
+            return Result.success(progressList);
+        } catch (Exception e) {
+            log.error("[ExternalGraph] 深度研究失败", e);
+            throw new BusinessException(ResultCode.WORKFLOW_EXECUTION_FAILED, "Deep research failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -189,24 +211,33 @@ public class ExternalGraphWorkflowController {
      * 请求体：{"question":"..."}
      */
     @PostMapping("/research/by-slug/{slug}/with-progress")
-    public Map<String, Object> researchWithProgressBySlug(
+    public Result<List<ResearchProgress>> researchWithProgressBySlug(
             @PathVariable String slug,
             @RequestBody Map<String, String> payload) {
 
         String question = payload.get("question");
         if (!StringUtils.hasText(question)) {
-            throw new IllegalArgumentException("question is required");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "question is required");
         }
 
         log.info("[ExternalGraph] 带进度深度研究请求, workflowSlug: {}, question: {}", slug, question);
         GraphWorkflow workflow = graphWorkflowService.getWorkflowBySlug(slug);
-        Long modelId = workflow.getLlmModelId();
-        if (modelId == null) {
-            throw new IllegalArgumentException("工作流未配置默认模型: " + slug);
+        if (workflow == null) {
+            throw new BusinessException(ResultCode.WORKFLOW_NOT_FOUND, "Workflow not found: " + slug);
         }
 
-        List<ResearchProgress> progressList = graphExecutionService.deepResearchWithProgress(modelId, question);
-        return Map.of("success", true, "progress", progressList);
+        Long modelId = workflow.getLlmModelId();
+        if (modelId == null) {
+            throw new BusinessException(ResultCode.WORKFLOW_CONFIG_ERROR, "Workflow has no default model: " + slug);
+        }
+
+        try {
+            List<ResearchProgress> progressList = graphExecutionService.deepResearchWithProgress(modelId, question);
+            return Result.success(progressList);
+        } catch (Exception e) {
+            log.error("[ExternalGraph] 深度研究失败", e);
+            throw new BusinessException(ResultCode.WORKFLOW_EXECUTION_FAILED, "Deep research failed: " + e.getMessage());
+        }
     }
 
     private String toJson(Object obj) {

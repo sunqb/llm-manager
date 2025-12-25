@@ -11,6 +11,7 @@ LLM Manager 是一个现代化的 LLM 管理系统，旨在简化大语言模型
 - **多模型管理**：支持多个 LLM 提供商，统一管理
 - **智能代理（Agent）**：配置系统提示词和参数，创建专用 AI 助手
 - **实时流式对话**：基于 SSE 的真正实时流式输出
+- **思考模式（Reasoning）**：支持 DeepSeek R1、OpenAI o1、豆包等模型的深度推理模式
 - **工具调用（Function Calling）**：支持 LLM 自动调用外部工具（天气查询、计算器等）
 - **会话历史管理**：支持多会话管理和历史记忆
 - **Markdown 渲染**：完整支持 Markdown 格式，包括代码高亮、表格、列表等
@@ -545,6 +546,27 @@ npm install marked dompurify
 - 功能建议：提交 Feature Request
 
 ## 更新日志
+
+
+### v2.7.0 (2025-12-25) 🔧
+
+**思考模式参数注入修复**
+
+#### 🐛 Bug 修复
+- **工具调用兼容性**：修复思考模式（thinkingMode）与工具调用（enableTools）无法同时生效的问题
+- **Spring AI merge 问题**：解决 `ModelOptionsUtils.merge()` 导致 `extraBody` 参数丢失的问题
+
+#### 🔄 架构重构
+- **metadata 方案**：采用 metadata 传递 thinking 参数（在 merge 中被保留），替代原有的 ThreadLocal 方案
+- **ThinkingAwareOpenAiApi**：在 HTTP 层面将 metadata 展开到 extraBody，实现参数正确注入
+- **代码简化**：移除反射依赖，直接使用 OpenAiChatModel
+
+#### 🗑️ 移除组件
+- `ThinkingChatModel.java` - metadata 方案无需包装器
+- `ThinkingContext.java` - 不再使用 ThreadLocal
+
+#### 📚 参考
+- GitHub Issue: https://github.com/spring-projects/spring-ai/issues/4879
 
 
 ### v2.6.0 (2025-12-18) 🚀

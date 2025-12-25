@@ -6,7 +6,7 @@ import com.llmmanager.agent.config.ToolFunctionManager;
 import com.llmmanager.agent.dto.ChatRequest;
 import com.llmmanager.agent.mcp.McpClientManager;
 import com.llmmanager.agent.message.MediaMessage;
-import com.llmmanager.agent.model.ThinkingChatModel;
+import com.llmmanager.agent.model.ThinkingAwareOpenAiApi;
 import com.llmmanager.agent.rag.RagAdvisorBuilder;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -17,7 +17,6 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -385,7 +384,7 @@ public class LlmChatAgent {
         if (thinkingAdvisor != null && StringUtils.hasText(request.getThinkingMode())
                 && !"auto".equalsIgnoreCase(request.getThinkingMode())) {
             advisors.add(thinkingAdvisor);
-            log.info("[LlmChatAgent] 启用 ThinkingAdvisor, thinkingMode: {}", request.getThinkingMode());
+            log.debug("[LlmChatAgent] 启用 ThinkingAdvisor, thinkingMode: {}", request.getThinkingMode());
         }
 
         if (!advisors.isEmpty()) {
@@ -425,25 +424,29 @@ public class LlmChatAgent {
     /**
      * 获取或创建 ChatModel（带缓存）
      *
-     * 使用 ThinkingChatModel 包装 OpenAiChatModel，以支持 thinking 参数注入。
-     * Spring AI 的 ModelOptionsUtils.merge() 会丢弃 extraBody，
-     * ThinkingChatModel 通过反射在 createRequest 后手动注入 thinking 参数。
+     * 使用 ThinkingAwareOpenAiApi 实现 thinking 参数注入：
+     * 1. ThinkingAdvisor 将 thinking 参数放入 OpenAiChatOptions.metadata
+     * 2. metadata 在 Spring AI 的 merge 过程中被保留（不像 extraBody 会丢失）
+     * 3. ThinkingAwareOpenAiApi 在 HTTP 请求发送前从 chatRequest.metadata() 读取并展开到 extraBody
+     *
+     * 参考：https://github.com/spring-projects/spring-ai/issues/4879
      */
     private ChatModel getOrCreateChatModel(ChatRequest request) {
         String cacheKey = buildCacheKey(request);
 
         return chatModelCache.computeIfAbsent(cacheKey, k -> {
-            OpenAiApi openAiApi = OpenAiApi.builder()
-                    .baseUrl(request.getBaseUrl())
-                    .apiKey(request.getApiKey())
-                    .build();
+            // 使用 ThinkingAwareOpenAiApi 替代普通的 OpenAiApi
+            // ThinkingAwareOpenAiApi 会在 HTTP 请求发送前从 metadata 读取并展开到 extraBody
+            ThinkingAwareOpenAiApi openAiApi = new ThinkingAwareOpenAiApi(
+                    request.getBaseUrl(),
+                    request.getApiKey()
+            );
 
-            OpenAiChatModel baseModel = OpenAiChatModel.builder()
+            // 直接使用 OpenAiChatModel，不需要 ThinkingChatModel 包装
+            // 因为 thinking 参数通过 metadata 传递，不再依赖 ThreadLocal
+            return OpenAiChatModel.builder()
                     .openAiApi(openAiApi)
                     .build();
-
-            // 使用 ThinkingChatModel 包装，支持 thinking 参数注入
-            return new ThinkingChatModel(baseModel);
         });
     }
 

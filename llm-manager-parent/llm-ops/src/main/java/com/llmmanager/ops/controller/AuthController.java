@@ -1,9 +1,12 @@
 package com.llmmanager.ops.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
-import cn.dev33.satoken.util.SaResult;
+import com.llmmanager.common.exception.BusinessException;
+import com.llmmanager.common.result.Result;
+import com.llmmanager.common.result.ResultCode;
 import com.llmmanager.service.core.entity.User;
 import com.llmmanager.service.core.service.UserService;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -17,31 +20,35 @@ public class AuthController {
     private UserService userService;
 
     @PostMapping("/login")
-    public SaResult login(@RequestBody Map<String, String> params) {
+    public Result<Object> login(@RequestBody Map<String, String> params) {
         String username = params.get("username");
         String password = params.get("password");
 
+        if (!StringUtils.hasText(username) || !StringUtils.hasText(password)) {
+            throw BusinessException.paramError("用户名和密码不能为空");
+        }
+
         User user = userService.findByUsername(username);
-        
+
         if (user == null || !user.getPassword().equals(password)) {
-            return SaResult.error("Invalid username or password");
+            throw new BusinessException(ResultCode.LOGIN_FAILED, "用户名或密码错误");
         }
 
         StpUtil.login(user.getId());
-        return SaResult.data(StpUtil.getTokenInfo());
+        return Result.success(StpUtil.getTokenInfo());
     }
 
     @PostMapping("/logout")
-    public SaResult logout() {
+    public Result<Void> logout() {
         StpUtil.logout();
-        return SaResult.ok();
+        return Result.success();
     }
-    
+
     @GetMapping("/info")
-    public SaResult info() {
-        if(StpUtil.isLogin()) {
-             return SaResult.data(Map.of("id", StpUtil.getLoginId(), "username", "admin"));
+    public Result<Object> info() {
+        if (StpUtil.isLogin()) {
+            return Result.success(Map.of("id", StpUtil.getLoginId(), "username", "admin"));
         }
-        return SaResult.error("Not logged in");
+        return Result.unauthorized("未登录");
     }
 }

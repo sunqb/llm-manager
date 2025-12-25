@@ -17,12 +17,31 @@ apiClient.interceptors.request.use(config => {
 })
 
 apiClient.interceptors.response.use(response => {
-    // Handle Sa-Token "soft" 401 errors (HTTP 200 but code=401 in body)
-    if (response.data && response.data.code === 401) {
-        localStorage.removeItem('satoken')
-        window.location.href = '/login'
-        return Promise.reject(new Error('Unauthorized'))
+    const resData = response.data
+
+    // 处理新的统一返回格式 Result<T>
+    // 格式：{ code, success, msg, time, data }
+    if (resData && typeof resData === 'object' && 'code' in resData && 'success' in resData) {
+        // Handle 401 unauthorized
+        if (resData.code === 401) {
+            localStorage.removeItem('satoken')
+            window.location.href = '/login'
+            return Promise.reject(new Error(resData.msg || 'Unauthorized'))
+        }
+
+        // Handle business errors (code != 200)
+        if (!resData.success || resData.code !== 200) {
+            console.error('[API Error]', resData.msg)
+            return Promise.reject(new Error(resData.msg || '操作失败'))
+        }
+
+        // Success: unwrap data field for backward compatibility
+        // 让视图组件可以继续使用 res.data 获取实际数据
+        response.data = resData.data
+        return response
     }
+
+    // 兼容旧格式（直接返回数据）或 SSE 流式响应
     return response
 }, error => {
     if (error.response && error.response.status === 401) {

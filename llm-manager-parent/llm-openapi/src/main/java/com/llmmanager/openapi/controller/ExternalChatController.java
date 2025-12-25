@@ -1,5 +1,8 @@
 package com.llmmanager.openapi.controller;
 
+import com.llmmanager.common.exception.BusinessException;
+import com.llmmanager.common.result.Result;
+import com.llmmanager.common.result.ResultCode;
 import com.llmmanager.service.core.entity.Agent;
 import com.llmmanager.service.core.service.AgentService;
 import com.llmmanager.service.dto.ChatStreamChunk;
@@ -50,7 +53,7 @@ public class ExternalChatController {
      * @return 响应结果
      */
     @PostMapping("/agents/{slug}/chat")
-    public Map<String, Object> chatWithAgent(
+    public Result<Map<String, Object>> chatWithAgent(
             @PathVariable String slug,
             @RequestBody Map<String, String> payload) {
 
@@ -59,23 +62,23 @@ public class ExternalChatController {
 
         // 参数校验
         if (!StringUtils.hasText(userMessage)) {
-            return Map.of("success", false, "error", "Message content is required");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Message content is required");
         }
 
         // 查找智能体
         Agent agent = agentService.findBySlug(slug);
         if (agent == null) {
             log.warn("[ExternalChatController] 智能体不存在，slug: {}", slug);
-            return Map.of("success", false, "error", "Agent not found: " + slug);
+            throw new BusinessException(ResultCode.AGENT_NOT_FOUND, "Agent not found: " + slug);
         }
 
         try {
             log.info("[ExternalChatController] 同步对话，agent: {}, conversationCode: {}", slug, conversationCode);
             String response = executionService.chatWithAgent(agent, userMessage, conversationCode);
-            return Map.of("success", true, "response", response);
+            return Result.success(Map.of("response", response));
         } catch (Exception e) {
             log.error("[ExternalChatController] 同步对话失败，agent: {}", slug, e);
-            return Map.of("success", false, "error", e.getMessage());
+            throw new BusinessException(ResultCode.CHAT_FAILED, "Chat failed: " + e.getMessage());
         }
     }
 

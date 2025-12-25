@@ -7,8 +7,10 @@ import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -83,7 +85,6 @@ public class ThinkingAdvisor implements BaseAdvisor {
 
         // 如果没有设置 thinkingMode 或者是 auto，不处理
         if (thinkingMode == null || thinkingMode.isEmpty() || "auto".equalsIgnoreCase(thinkingMode)) {
-            log.debug("[ThinkingAdvisor] 未设置 thinkingMode 或为 auto，跳过处理");
             return request;
         }
 
@@ -93,9 +94,9 @@ public class ThinkingAdvisor implements BaseAdvisor {
 
         // 解析格式
         ReasoningFormat format = parseFormat(formatStr, originalOptions);
-        log.info("[ThinkingAdvisor] 处理 thinking 参数 - mode: {}, format: {}", thinkingMode, format);
+        log.debug("[ThinkingAdvisor] 处理 thinking 参数 - mode: {}, format: {}", thinkingMode, format);
 
-        // 构建带 extraBody 的 OpenAiChatOptions
+        // 构建带 metadata 的 OpenAiChatOptions
         OpenAiChatOptions newOptions = buildOpenAiOptionsWithExtraBody(originalOptions, thinkingMode, format);
 
         // 使用 Prompt.mutate() 创建新的 Prompt，替换 ChatOptions
@@ -108,9 +109,6 @@ public class ThinkingAdvisor implements BaseAdvisor {
                 .prompt(modifiedPrompt)
                 .context(request.context())
                 .build();
-
-        log.info("[ThinkingAdvisor] 已注入 thinking 参数到 extraBody");
-        // logOpenAiOptions(newOptions);
 
         return modifiedRequest;
     }
@@ -200,7 +198,7 @@ public class ThinkingAdvisor implements BaseAdvisor {
     private OpenAiChatOptions buildOpenAiOptionsWithExtraBody(ChatOptions originalOptions, String thinkingMode, ReasoningFormat format) {
         OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder();
 
-        // 复制原始 Options 的参数
+        // 复制原始 Options 的所有参数
         if (originalOptions != null) {
             builder.model(originalOptions.getModel())
                     .temperature(originalOptions.getTemperature())
@@ -209,37 +207,95 @@ public class ThinkingAdvisor implements BaseAdvisor {
                     .frequencyPenalty(originalOptions.getFrequencyPenalty())
                     .presencePenalty(originalOptions.getPresencePenalty())
                     .stop(originalOptions.getStopSequences());
-        }
 
-        // 构建 extraBody（会被打平到 JSON 根层级）
-        Map<String, Object> extraBody = new HashMap<>();
+            // 复制 OpenAI 特有的参数（包括工具配置）
+            if (originalOptions instanceof OpenAiChatOptions openAiOptions) {
+                // OpenAI 低级工具配置（FunctionTool）
+                if (openAiOptions.getTools() != null) {
+                    builder.tools(openAiOptions.getTools());
+                }
+                if (openAiOptions.getToolChoice() != null) {
+                    builder.toolChoice(openAiOptions.getToolChoice());
+                }
+                if (openAiOptions.getParallelToolCalls() != null) {
+                    builder.parallelToolCalls(openAiOptions.getParallelToolCalls());
+                }
+                // 其他 OpenAI 参数
+                if (openAiOptions.getUser() != null) {
+                    builder.user(openAiOptions.getUser());
+                }
+                if (openAiOptions.getSeed() != null) {
+                    builder.seed(openAiOptions.getSeed());
+                }
+                if (openAiOptions.getLogprobs() != null) {
+                    builder.logprobs(openAiOptions.getLogprobs());
+                }
+                if (openAiOptions.getTopLogprobs() != null) {
+                    builder.topLogprobs(openAiOptions.getTopLogprobs());
+                }
+                if (openAiOptions.getResponseFormat() != null) {
+                    builder.responseFormat(openAiOptions.getResponseFormat());
+                }
+            }
 
-        // 如果原有 extraBody，先复制（排除 thinking 和 reasoning_effort）
-        if (originalOptions instanceof OpenAiChatOptions openAiOptions) {
-            if (openAiOptions.getExtraBody() != null) {
-                for (var entry : openAiOptions.getExtraBody().entrySet()) {
-                    String key = entry.getKey();
-                    if (!"thinking".equals(key) && !"reasoning_effort".equals(key)) {
-                        extraBody.put(key, entry.getValue());
-                    }
+            // 复制 Spring AI ToolCallingChatOptions 参数（关键！工具回调在这里）
+            if (originalOptions instanceof ToolCallingChatOptions toolOptions) {
+                // Spring AI 高级工具配置（ToolCallback）
+                if (!CollectionUtils.isEmpty(toolOptions.getToolCallbacks())) {
+                    builder.toolCallbacks(toolOptions.getToolCallbacks());
+                    log.debug("[ThinkingAdvisor] 复制 toolCallbacks, 数量: {}", toolOptions.getToolCallbacks().size());
+                }
+                if (!CollectionUtils.isEmpty(toolOptions.getToolNames())) {
+                    builder.toolNames(toolOptions.getToolNames());
+                    log.debug("[ThinkingAdvisor] 复制 toolNames: {}", toolOptions.getToolNames());
+                }
+                if (!CollectionUtils.isEmpty(toolOptions.getToolContext())) {
+                    builder.toolContext(toolOptions.getToolContext());
+                }
+                if (toolOptions.getInternalToolExecutionEnabled() != null) {
+                    builder.internalToolExecutionEnabled(toolOptions.getInternalToolExecutionEnabled());
                 }
             }
         }
 
-        // 根据格式添加 thinking 参数到 extraBody
+        // 构建 metadata（用于传递 thinking 参数，解决 extraBody 在 merge 时丢失的问题）
+        // ThinkingAwareOpenAiApi 会从 metadata 读取并展开到 extraBody
+        Map<String, String> metadata = new HashMap<>();
+
+        // 如果原有 metadata，先复制
+        if (originalOptions instanceof OpenAiChatOptions openAiOptions) {
+            if (openAiOptions.getMetadata() != null) {
+                metadata.putAll(openAiOptions.getMetadata());
+            }
+            // 保留原有 extraBody（排除 thinking 相关参数）
+            if (openAiOptions.getExtraBody() != null && !openAiOptions.getExtraBody().isEmpty()) {
+                Map<String, Object> extraBody = new HashMap<>();
+                for (var entry : openAiOptions.getExtraBody().entrySet()) {
+                    String key = entry.getKey();
+                    if (!"thinking".equals(key) && !"reasoning_effort".equals(key) && !"enable_thinking".equals(key)) {
+                        extraBody.put(key, entry.getValue());
+                    }
+                }
+                if (!extraBody.isEmpty()) {
+                    builder.extraBody(extraBody);
+                }
+            }
+        }
+
+        // 根据格式添加 thinking 参数到 metadata
+        // ThinkingAwareOpenAiApi 会在 HTTP 层面将 metadata 展开到 extraBody
         switch (format) {
             case DOUBAO -> {
-                // 豆包格式: extraBody 中放 {"thinking": {"type": "enabled/disabled"}}
-                // 最终会打平到 JSON 根层级
-                Map<String, Object> thinking = new HashMap<>();
-                thinking.put("type", thinkingMode);
-                extraBody.put("thinking", thinking);
-                log.debug("[ThinkingAdvisor] 设置豆包格式 thinking: {}", thinkingMode);
+                // 豆包格式: metadata 中放 thinking_mode=enabled/disabled
+                // ThinkingAwareOpenAiApi 会转换为 {"thinking": {"type": "enabled/disabled"}}
+                metadata.put("thinking_mode", thinkingMode);
+                log.debug("[ThinkingAdvisor] 设置豆包格式 thinking_mode 到 metadata: {}", thinkingMode);
             }
             case OPENAI -> {
-                // OpenAI 格式: extraBody 中放 {"reasoning_effort": "low/medium/high"}
-                extraBody.put("reasoning_effort", thinkingMode);
-                log.debug("[ThinkingAdvisor] 设置 OpenAI 格式 reasoning_effort: {}", thinkingMode);
+                // OpenAI 格式: metadata 中放 reasoning_effort=low/medium/high
+                // ThinkingAwareOpenAiApi 会转换为 {"reasoning_effort": "low/medium/high"}
+                metadata.put("reasoning_effort", thinkingMode);
+                log.debug("[ThinkingAdvisor] 设置 OpenAI 格式 reasoning_effort 到 metadata: {}", thinkingMode);
             }
             case DEEPSEEK -> {
                 // DeepSeek 不需要额外参数，R1 模型自动启用深度思考
@@ -247,39 +303,17 @@ public class ThinkingAdvisor implements BaseAdvisor {
             }
             default -> {
                 // 默认使用豆包格式
-                Map<String, Object> thinking = new HashMap<>();
-                thinking.put("type", thinkingMode);
-                extraBody.put("thinking", thinking);
-                log.debug("[ThinkingAdvisor] 默认使用豆包格式 thinking: {}", thinkingMode);
+                metadata.put("thinking_mode", thinkingMode);
+                log.debug("[ThinkingAdvisor] 默认使用豆包格式 thinking_mode 到 metadata: {}", thinkingMode);
             }
         }
 
-        // 设置 extraBody
-        if (!extraBody.isEmpty()) {
-            builder.extraBody(extraBody);
+        // 设置 metadata
+        if (!metadata.isEmpty()) {
+            builder.metadata(metadata);
+            log.debug("[ThinkingAdvisor] 设置 metadata: {}", metadata);
         }
 
         return builder.build();
-    }
-
-    /**
-     * 打印 OpenAiChatOptions（调试用）
-     */
-    private void logOpenAiOptions(OpenAiChatOptions options) {
-        if (log.isInfoEnabled()) {
-            try {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                mapper.setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
-                String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(options);
-                log.info("[ThinkingAdvisor] OpenAiChatOptions JSON:\n{}", json);
-
-                // 单独打印 extraBody 内容
-                if (options.getExtraBody() != null && !options.getExtraBody().isEmpty()) {
-                    log.info("[ThinkingAdvisor] extraBody 内容（将打平到 JSON 根层级）: {}", options.getExtraBody());
-                }
-            } catch (Exception e) {
-                log.warn("[ThinkingAdvisor] 序列化 OpenAiChatOptions 失败: {}", e.getMessage());
-            }
-        }
     }
 }

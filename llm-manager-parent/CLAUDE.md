@@ -343,6 +343,82 @@ curl -N http://localhost:8080/api/external/agents/{slug}/chat/stream \
 
 ---
 
+## 思考模式实现（Thinking/Reasoning）
+
+### 概述
+
+支持豆包/火山引擎、OpenAI o1/o3、DeepSeek R1 等模型的思考模式。
+
+**核心挑战**：Spring AI 的 `ModelOptionsUtils.merge()` 会丢弃 `extraBody` 参数（因为没有 `@JsonProperty` 注解），导致 thinking 参数无法传递到 API。
+
+**解决方案**：使用 `metadata` 传递参数（在 merge 中被保留），然后在 HTTP 层面展开到 `extraBody`。
+
+参考：https://github.com/spring-projects/spring-ai/issues/4879
+
+### 核心组件
+
+| 组件 | 路径 | 职责 |
+|------|------|------|
+| **ThinkingAdvisor** | `advisor/ThinkingAdvisor.java` | 将 thinkingMode 放入 metadata |
+| **ThinkingAwareOpenAiApi** | `model/ThinkingAwareOpenAiApi.java` | 从 metadata 展开到 extraBody |
+
+### 数据流
+
+```
+ChatRequest.thinkingMode: "enabled"
+        ↓
+ThinkingAdvisor.before()
+    - 读取 thinkingMode
+    - 放入 OpenAiChatOptions.metadata = {"thinking_mode": "enabled"}
+        ↓
+OpenAiChatModel (Spring AI 正常流程)
+    - merge() 时 metadata 被保留
+        ↓
+ThinkingAwareOpenAiApi.chatCompletionStream()
+    - expandMetadataToExtraBody()
+    - extraBody = {"thinking": {"type": "enabled"}}
+        ↓
+HTTP JSON (通过 @JsonAnyGetter 打平)
+{
+  "model": "doubao-pro",
+  "messages": [...],
+  "thinking": {"type": "enabled"}  // ← 成功出现在根层级
+}
+```
+
+### 支持的格式
+
+| 模型 | 格式 | metadata 键 | extraBody 结果 |
+|------|------|-------------|----------------|
+| 豆包/火山引擎 | DOUBAO | `thinking_mode` | `{"thinking": {"type": "enabled"}}` |
+| OpenAI o1/o3 | OPENAI | `reasoning_effort` | `{"reasoning_effort": "medium"}` |
+| DeepSeek R1 | DEEPSEEK | 无需参数 | R1 模型自动启用 |
+
+### 使用示例
+
+```java
+ChatRequest request = ChatRequest.builder()
+    .modelIdentifier("doubao-pro")
+    .thinkingMode("enabled")           // enabled | disabled
+    .reasoningFormat(ReasoningFormat.DOUBAO)
+    .enableTools(true)                 // 工具调用和思考模式可同时启用
+    .userMessage("解释量子纠缠")
+    .build();
+
+Flux<ChatResponse> stream = llmChatAgent.stream(request, conversationCode);
+```
+
+### 已删除的组件
+
+以下组件已在 v2.0 中删除：
+
+| 组件 | 删除原因 |
+|------|---------|
+| `ThinkingChatModel.java` | metadata 方案无需包装器 |
+| `ThinkingContext.java` | 不再使用 ThreadLocal |
+
+详细文档：[`docs/advisor-and-thinking-model-solution.md`](./docs/advisor-and-thinking-model-solution.md)
+
 ## 聊天历史记忆（基于 Spring AI）
 
 ### 概述
@@ -373,7 +449,10 @@ llm-agent/src/main/java/com/llmmanager/agent/
 │   └── memory/                        # LLM 聊天记忆业务层
 │       ├── MybatisChatMemoryRepository.java  # Spring AI 适配器
 │       └── ChatMemoryManager.java            # 聊天记忆管理器
-├── advisor/                           # Advisor 实现（预留，未来扩展）
+├── advisor/                           # Advisor 实现
+│   └── ThinkingAdvisor.java          # 思考模式 Advisor（metadata 方案）
+├── model/                             # 模型扩展
+│   └── ThinkingAwareOpenAiApi.java   # 支持 thinking 参数的 OpenAiApi
 ├── agent/
 │   └── LlmChatAgent.java             # LLM 对话代理
 ├── config/
@@ -386,7 +465,8 @@ llm-agent/src/main/java/com/llmmanager/agent/
 **职责划分**：
 - `storage/core/`: 核心数据层，直接映射数据库（Entity + Mapper + Service）
 - `storage/memory/`: LLM 业务层，实现聊天记忆功能（Spring AI 适配 + 管理器）
-- `advisor/`: 预留给未来的自定义 Advisor 实现（如 OpsChatMemoryAdvisor）
+- `advisor/`: 自定义 Advisor 实现（ThinkingAdvisor 处理思考模式参数）
+- `model/`: 模型扩展（ThinkingAwareOpenAiApi 处理 metadata 展开）
 
 ### 数据模型
 

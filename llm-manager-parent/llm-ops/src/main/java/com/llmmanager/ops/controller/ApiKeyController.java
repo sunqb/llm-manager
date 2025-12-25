@@ -1,5 +1,6 @@
 package com.llmmanager.ops.controller;
 
+import com.llmmanager.common.result.Result;
 import com.llmmanager.service.core.entity.ApiKey;
 import com.llmmanager.service.core.service.ApiKeyService;
 import org.springframework.web.bind.annotation.*;
@@ -15,22 +16,23 @@ public class ApiKeyController {
     private ApiKeyService apiKeyService;
 
     @GetMapping
-    public List<ApiKey> getAll() {
-        return apiKeyService.findAll();
+    public Result<List<ApiKey>> getAll() {
+        return Result.success(apiKeyService.findAll());
     }
 
     @PostMapping
-    public ApiKey create(@RequestBody ApiKey apiKey) {
-        return apiKeyService.create(apiKey);
+    public Result<ApiKey> create(@RequestBody ApiKey apiKey) {
+        return Result.success(apiKeyService.create(apiKey));
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id) {
         apiKeyService.delete(id);
+        return Result.success();
     }
 
     @PostMapping("/{id}/revoke")
-    public ApiKey revoke(@PathVariable Long id) {
-        return apiKeyService.revoke(id);
+    public Result<ApiKey> revoke(@PathVariable Long id) {
+        return Result.success(apiKeyService.revoke(id));
     }
 }

@@ -1,5 +1,6 @@
 package com.llmmanager.ops.controller;
 
+import com.llmmanager.common.result.Result;
 import com.llmmanager.service.core.entity.Prompt;
 import com.llmmanager.service.core.service.PromptService;
 import org.springframework.web.bind.annotation.*;
@@ -15,12 +16,12 @@ public class PromptController {
     private PromptService promptService;
 
     @GetMapping
-    public List<Prompt> getAll() {
-        return promptService.findAll();
+    public Result<List<Prompt>> getAll() {
+        return Result.success(promptService.findAll());
     }
 
     @PostMapping
-    public Prompt create(@RequestBody Prompt prompt) {
-        return promptService.create(prompt);
+    public Result<Prompt> create(@RequestBody Prompt prompt) {
+        return Result.success(promptService.create(prompt));
     }
 }
