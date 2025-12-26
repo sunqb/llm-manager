@@ -73,7 +73,7 @@ import java.util.Map;
 public class OpenAiAgentsController {
 
     @Resource
-    private DynamicReactAgentExecutionService reactAgentService;
+    private DynamicReactAgentExecutionService dynamicReactAgentExecutionService;
 
     @Resource
     private ObjectMapper objectMapper;
@@ -89,7 +89,7 @@ public class OpenAiAgentsController {
     public ModelsResponse listAgents() {
         List<ModelsResponse.Model> models = new ArrayList<>();
 
-        List<ReactAgent> reactAgents = reactAgentService.getActiveAgents();
+        List<ReactAgent> reactAgents = dynamicReactAgentExecutionService.getActiveAgents();
         for (ReactAgent agent : reactAgents) {
             models.add(ModelsResponse.Model.builder()
                     .id(agent.getSlug())
@@ -110,7 +110,7 @@ public class OpenAiAgentsController {
      */
     @GetMapping("/{slug}")
     public ModelsResponse.Model getAgent(@PathVariable String slug) {
-        ReactAgent agent = reactAgentService.getAgentBySlug(slug);
+        ReactAgent agent = dynamicReactAgentExecutionService.getAgentBySlug(slug);
         if (agent == null) {
             throw new BusinessException(ResultCode.REACT_AGENT_NOT_FOUND, "Agent not found: " + slug);
         }
@@ -144,7 +144,7 @@ public class OpenAiAgentsController {
         validateRequest(request);
 
         // 检查 Agent 是否存在
-        ReactAgent agent = reactAgentService.getAgentBySlug(slug);
+        ReactAgent agent = dynamicReactAgentExecutionService.getAgentBySlug(slug);
         if (agent == null) {
             throw new BusinessException(ResultCode.REACT_AGENT_NOT_FOUND, "Agent not found: " + slug);
         }
@@ -174,7 +174,7 @@ public class OpenAiAgentsController {
         validateRequest(request);
 
         // 检查 Agent 是否存在
-        ReactAgent agent = reactAgentService.getAgentBySlug(slug);
+        ReactAgent agent = dynamicReactAgentExecutionService.getAgentBySlug(slug);
         if (agent == null) {
             return errorStream("Agent not found: " + slug);
         }
@@ -195,7 +195,7 @@ public class OpenAiAgentsController {
         log.info("[OpenAI Agents API] 同步请求，slug: {}", slug);
 
         try {
-            Map<String, Object> response = reactAgentService.execute(slug, userMessage);
+            Map<String, Object> response = dynamicReactAgentExecutionService.execute(slug, userMessage);
             String result = extractResult(response);
             return ChatCompletionResponse.success(modelId, result);
 
@@ -222,7 +222,7 @@ public class OpenAiAgentsController {
 
         // 执行并返回结果
         Flux<ServerSentEvent<String>> resultStream = Mono.fromCallable(() -> {
-                    Map<String, Object> response = reactAgentService.execute(slug, userMessage);
+                    Map<String, Object> response = dynamicReactAgentExecutionService.execute(slug, userMessage);
                     return extractResult(response);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
