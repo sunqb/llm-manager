@@ -30,7 +30,8 @@
 | 技术 | 版本 | 用途 |
 |------|------|------|
 | Spring Boot | 3.2.5 | 应用框架 |
-| Spring AI OpenAI | 1.1.0 | LLM 集成（支持 Reasoning） |
+| Spring AI OpenAI | 1.1.2 | LLM 集成（支持 Reasoning） |
+| Spring AI Alibaba | 1.1.2.2 | Agent Framework + Skills |
 | MyBatis-Plus | 3.5.7 | ORM 框架 |
 | MySQL/TiDB | 8.x | 数据库 |
 | Java | 21 (最低17) | 编程语言 |
@@ -341,6 +342,7 @@ erDiagram
 - ✅ **Vector Store**：向量存储与 RAG 支持
 - ✅ **ReactAgent 框架**：SINGLE/SEQUENTIAL/SUPERVISOR 三种模式
 - ✅ **Graph 工作流**：动态配置驱动的工作流编排
+- ✅ **Skills 支持**：基于 SKILL.md 文件的技能注入，通过 SkillsAgentHook 动态增强 Agent 系统提示词
 
 **依赖**：llm-common, spring-ai-alibaba-agent-framework
 
@@ -2176,6 +2178,165 @@ String result = team.execute("撰写一篇关于量子计算的报告");
 
 ---
 
+### ✅ Phase 5c：Skills 支持 - 已完成
+
+**目标**：允许为 ReactAgent 注入预定义的行为指南（Prompt），通过 Markdown 文件定义技能，运行时由 `SkillsAgentHook` 动态注入到 Agent 系统提示词中。
+
+参考文档：https://java2ai.com/docs/frameworks/agent-framework/tutorials/skills/
+
+---
+
+#### 工作原理
+
+```mermaid
+flowchart LR
+    A["classpath:skills/<br/>SKILL.md 文件"] -->|"PathMatchingResourcePatternResolver<br/>扫描"| B["提取到临时目录<br/>(fat JAR 兼容)"]
+    B -->|"FileSystemSkillRegistry<br/>加载"| C["Skills 注册表"]
+    C -->|"SkillsAgentHook<br/>注入"| D["Agent 系统提示词<br/>（每次 LLM 调用前）"]
+    D --> E["LLM"]
+```
+
+> **ClasspathSkillRegistry 兼容性说明**：Spring AI Alibaba 官方的 `ClasspathSkillRegistry` 在 Spring Boot 3.2+ fat JAR 中存在 `nested:` URL 协议不支持的问题，会静默返回 0 个 Skills。本项目通过 `extractSkillsToFilesystem()` 方法将 Skills 资源提取到临时目录，改用 `FileSystemSkillRegistry` 加载，完全兼容生产环境部署。
+
+---
+
+#### Skills 目录结构
+
+```
+llm-agent/src/main/resources/skills/
+├── general-assistant/
+│   └── SKILL.md          # 通用问答、写作辅助、任务规划技能
+├── code-reviewer/
+│   └── SKILL.md          # 代码审查、安全检测、性能优化建议技能
+└── data-analyst/
+    └── SKILL.md          # 数据分析、统计解读、业务洞察技能
+```
+
+每个技能一个子目录，目录名即技能名，目录下必须有 `SKILL.md` 文件。
+
+---
+
+#### SKILL.md 文件格式
+
+文件必须包含 YAML frontmatter，正文为 Markdown 格式的行为指南：
+
+```markdown
+---
+name: skill-name          # 必须：小写字母数字连字符，匹配正则 ^[a-z0-9]+(-[a-z0-9]+)*$
+description: 何时使用此技能的简短描述
+---
+
+# 技能标题
+
+## 职责
+描述该技能的核心职责...
+
+## 行为准则
+1. 规则1...
+2. 规则2...
+
+## 输出格式
+...
+```
+
+**frontmatter 验证规则**：
+- `name`：必须，正则 `^[a-z0-9]+(-[a-z0-9]+)*$`（如 `code-reviewer`，不能有大写或下划线）
+- `description`：必须，非空字符串
+
+---
+
+#### 配置方式
+
+通过数据库 `p_react_agents.agent_config` JSON 字段的 `skillsPath` 属性启用：
+
+```json
+{
+  "agentType": "SINGLE",
+  "modelId": 1,
+  "instruction": "你是一个专业助手...",
+  "tools": ["weather"],
+  "skillsPath": "skills"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `skillsPath` | String（可选） | classpath 下技能目录的相对路径，通常为 `"skills"`；不配置则不启用 Skills |
+
+---
+
+#### 代码用法（AgentWrapper）
+
+```java
+// 通过 skillsClasspathPath() 指定 classpath 下的技能目录
+AgentWrapper agent = AgentWrapper.builder()
+    .name("my-agent")
+    .chatModel(chatModel)
+    .systemPrompt("你是一个助手")
+    .skillsClasspathPath("skills")  // 加载 classpath:skills/ 下所有技能
+    .build();
+
+// 查询技能加载情况
+agent.hasSkills();                        // true/false
+agent.getSkillsHook().getSkillCount();    // 技能数量
+agent.getSkillsHook().listSkills();       // 列出所有技能名称
+```
+
+---
+
+#### 启动验证日志
+
+应用启动并执行 Agent 对话时，可看到以下日志确认 Skills 加载成功：
+
+```
+扫描 Skills 资源: pattern=classpath*:skills/**/SKILL.md, 发现 3 个
+Skills 已提取到临时目录: /var/folders/.../llm-agent-skills-xxx
+Loaded skill: data-analyst
+Loaded skill: general-assistant
+Loaded skill: code-reviewer
+Discovered 3 skills from ...
+Loaded 3 user-level skills
+Agent '天气专家' 启用 Skills, 路径: skills, 技能数: 3
+构建 Agent '天气专家' 完成, 工具数量: 1, Skills: 3
+```
+
+---
+
+#### 内置示例技能
+
+| 技能名 | 路径 | 适用场景 |
+|--------|------|---------|
+| `general-assistant` | `skills/general-assistant/SKILL.md` | 通用问答、写作辅助、任务规划 |
+| `code-reviewer` | `skills/code-reviewer/SKILL.md` | 代码审查、安全检测、性能优化建议 |
+| `data-analyst` | `skills/data-analyst/SKILL.md` | 数据分析、统计解读、业务洞察 |
+
+---
+
+#### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/reactagent/core/
+└── AgentWrapper.java
+      ├── skillsClasspathPath(String)      # Builder 方法，配置技能路径
+      ├── extractSkillsToFilesystem()      # 提取 classpath 资源到临时目录
+      ├── hasSkills()                      # 是否启用了 Skills
+      └── getSkillsHook()                  # 获取 SkillsAgentHook 实例
+
+llm-agent/src/main/java/com/llmmanager/agent/reactagent/config/
+└── ReactAgentConfigDTO.java
+      └── skillsPath                       # 数据库配置字段
+
+llm-agent/src/main/java/com/llmmanager/agent/reactagent/factory/
+└── ReactAgentFactory.java                 # 从 config.skillsPath 传递到 AgentWrapper
+
+llm-agent/src/main/resources/skills/      # 技能文件目录
+├── general-assistant/SKILL.md
+├── code-reviewer/SKILL.md
+└── data-analyst/SKILL.md
+```
+
+---
+
 ### 📋 其他规划
 
 #### 性能优化
@@ -2301,6 +2462,22 @@ java -version
 ```
 
 ## 📝 更新日志
+
+### v2.8.0 (2026-04-29) - Skills 支持 & Spring AI Alibaba 1.1.2.2 升级
+
+#### ✨ 新功能
+- **Skills 支持**：为 ReactAgent 注入预定义行为指南，通过 `SKILL.md` 文件定义技能，`SkillsAgentHook` 在每次 LLM 调用前动态注入到系统提示词
+- **内置示例技能**：提供 `general-assistant`、`code-reviewer`、`data-analyst` 三个开箱即用的示例技能
+- **`skillsPath` 配置项**：`ReactAgentConfigDTO` 新增 `skillsPath` 字段，支持通过数据库配置启用 Skills
+
+#### 🔧 Bug 修复
+- **ClasspathSkillRegistry fat JAR 兼容性**：修复 Spring Boot 3.2+ fat JAR 中 `nested:` URL 协议导致 Skills 静默加载 0 个的问题。通过 `PathMatchingResourcePatternResolver` 扫描资源并提取到临时目录，改用 `FileSystemSkillRegistry` 加载，完全兼容生产环境
+
+#### ⬆️ 依赖升级
+- `spring-ai` `1.1.0` → `1.1.2`
+- `spring-ai-alibaba` `1.1.0.0-RC1` → `1.1.2.2`
+
+---
 
 ### v2.7.0 (2025-12-25) - 思考模式参数注入修复 & 统一返回格式 🔧
 
