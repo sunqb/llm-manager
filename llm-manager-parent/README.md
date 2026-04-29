@@ -204,31 +204,48 @@ sequenceDiagram
 
 ```mermaid
 erDiagram
+    %% 配置表关系
     P_USERS ||--o{ P_API_KEY : creates
     P_CHANNEL ||--o{ P_LLM_MODEL : contains
     P_LLM_MODEL ||--o{ P_AGENTS : uses
     P_LLM_MODEL ||--o{ P_REACT_AGENT : uses
     P_LLM_MODEL ||--o{ P_GRAPH_WORKFLOWS : uses
+    P_CHANNEL ||--o{ A_KNOWLEDGE_BASES : embedding_channel
 
-    A_CHAT_HISTORY {
-        bigint id PK
-        varchar conversation_code
-        varchar message_type
-        text content
-        json metadata
-    }
+    %% 对话数据关系
+    A_CONVERSATIONS ||--o{ A_CONVERSATION_TURNS : has
+    A_CONVERSATION_TURNS ||--o{ A_CHAT_HISTORY : contains
+    A_CHAT_HISTORY ||--o{ A_MEDIA_FILES : attaches
+
+    %% Graph 运行时关系
+    P_GRAPH_WORKFLOWS ||--o{ A_GRAPH_TASKS : runs
+    A_GRAPH_TASKS ||--o{ A_GRAPH_STEPS : has
+
+    %% RAG 关系
+    A_KNOWLEDGE_BASES ||--o{ A_KNOWLEDGE_DOCUMENTS : contains
+
+    %% 人工审核关系
+    A_GRAPH_TASKS ||--o{ A_PENDING_REVIEWS : triggers
+
     P_USERS {
         bigint id PK
         varchar username UK
         varchar password
         varchar email
     }
+    P_API_KEY {
+        bigint id PK
+        varchar name
+        varchar token UK
+        tinyint active
+        datetime expires_at
+    }
     P_CHANNEL {
         bigint id PK
         varchar name
+        varchar type
         varchar base_url
         varchar api_key
-        varchar type
     }
     P_LLM_MODEL {
         bigint id PK
@@ -244,6 +261,7 @@ erDiagram
         varchar slug UK
         text system_prompt
         bigint llm_model_id FK
+        double temperature_override
     }
     P_REACT_AGENT {
         bigint id PK
@@ -259,7 +277,7 @@ erDiagram
         varchar name
         varchar slug UK
         varchar workflow_type
-        bigint default_model_id FK
+        bigint llm_model_id FK
         text graph_config
         tinyint is_active
     }
@@ -269,44 +287,162 @@ erDiagram
         text content
         text description
     }
-    P_API_KEY {
+    A_CONVERSATIONS {
         bigint id PK
-        varchar name
-        varchar token UK
-        tinyint active
+        varchar conversation_code UK
+        varchar title
+        varchar agent_slug
+        bigint model_id
+        text summary
+        int message_count
+        int total_tokens
+        datetime last_message_time
+        tinyint is_archived
+        tinyint is_pinned
+    }
+    A_CONVERSATION_TURNS {
+        bigint id PK
+        varchar turn_code UK
+        varchar conversation_code FK
+        int turn_index
+        varchar user_message_code
+        varchar assistant_message_code
+        int prompt_tokens
+        int completion_tokens
+        int total_tokens
+        int latency_ms
+        int first_token_ms
+        varchar status
+        bigint model_id
+        varchar model_identifier
+    }
+    A_CHAT_HISTORY {
+        bigint id PK
+        varchar message_code UK
+        varchar conversation_code FK
+        varchar turn_code FK
+        int message_index
+        varchar message_type
+        text content
+        json metadata
+    }
+    A_MEDIA_FILES {
+        bigint id PK
+        varchar file_code UK
+        varchar conversation_code
+        varchar message_code FK
+        varchar media_type
+        varchar mime_type
+        varchar file_name
+        bigint file_size
+        varchar file_url
+        varchar thumbnail_url
     }
     A_MCP_SERVERS {
         bigint id PK
         varchar server_code UK
         varchar name
         varchar transport_type
-        text connection_config
-        tinyint is_enabled
+        varchar command
+        json args
+        json env
+        varchar url
+        tinyint enabled
+    }
+    A_KNOWLEDGE_BASES {
+        bigint id PK
+        varchar kb_code UK
+        varchar name
+        varchar kb_type
+        varchar embedding_model
+        int embedding_dimensions
+        bigint channel_id FK
+        int document_count
+        int vector_count
+        tinyint enabled
+    }
+    A_KNOWLEDGE_DOCUMENTS {
+        bigint id PK
+        varchar doc_code UK
+        varchar kb_code FK
+        varchar title
+        varchar doc_type
+        mediumtext content
+        varchar status
+        int chunk_count
+        int char_count
+        varchar source_url
+    }
+    A_GRAPH_TASKS {
+        bigint id PK
+        varchar task_code UK
+        bigint graph_workflow_id FK
+        bigint model_id
+        varchar conversation_code
+        text question
+        text answer
+        varchar status
+        int iteration_count
+        bigint total_duration_ms
+    }
+    A_GRAPH_STEPS {
+        bigint id PK
+        varchar step_code UK
+        varchar task_code FK
+        varchar node_name
+        int iteration_round
+        int step_index
+        text input_data
+        text output_data
+        varchar status
+        bigint duration_ms
+    }
+    A_PENDING_REVIEWS {
+        bigint id PK
+        varchar review_code UK
+        varchar review_type
+        bigint graph_task_id FK
+        varchar conversation_code
+        varchar agent_config_code
+        varchar current_node
+        text reviewer_prompt
+        json context_data
+        varchar status
+        tinyint review_result
+        text review_comment
+        bigint reviewer_id
+        tinyint resume_after_approval
     }
 ```
 
 **表命名规范**：
-- `p_*` - 业务配置表（llm-service 模块）
-- `a_*` - Agent 运行时表（llm-agent 模块）
+- `p_*` - 业务配置表（持久化配置数据，llm-service 模块为主）
+- `a_*` - Agent 运行时表（对话、任务等动态数据，llm-agent 模块为主）
 
-**核心业务表**：
+**完整表清单（共 18 张）**：
 
-| 表名 | 说明 | 模块 |
-|------|------|------|
-| `p_users` | 用户表 | llm-service |
-| `p_channel` | LLM 渠道配置 | llm-service |
-| `p_llm_model` | LLM 模型配置 | llm-service |
-| `p_agents` | 基础 Agent 配置 | llm-service |
-| `p_react_agent` | ReactAgent 配置（SINGLE/SEQUENTIAL/SUPERVISOR） | llm-agent |
-| `p_graph_workflows` | Graph 工作流配置 | llm-agent |
-| `p_prompt` | 提示词模板 | llm-service |
-| `p_api_key` | API 密钥 | llm-service |
-| `a_chat_history` | 对话历史 | llm-agent |
-| `a_conversations` | 会话元数据 | llm-agent |
-| `a_mcp_servers` | MCP 服务器配置 | llm-agent |
-| `a_knowledge_bases` | 知识库配置 | llm-agent |
+| 表名 | 说明 | 前缀 | 模块 |
+|------|------|------|------|
+| `p_users` | 用户账号 | p | llm-service |
+| `p_channel` | LLM 渠道配置（API 端点、密钥） | p | llm-service |
+| `p_llm_model` | LLM 模型配置（关联渠道） | p | llm-service |
+| `p_agents` | 传统 Agent 配置（系统提示词） | p | llm-service |
+| `p_react_agent` | ReactAgent 配置（SINGLE/SEQUENTIAL/SUPERVISOR） | p | llm-agent |
+| `p_graph_workflows` | Graph 工作流配置（JSON 节点图） | p | llm-agent |
+| `p_prompt` | 提示词模板 | p | llm-service |
+| `p_api_key` | 外部 API 访问密钥 | p | llm-service |
+| `a_conversations` | 会话元数据（标题、统计信息） | a | llm-agent |
+| `a_conversation_turns` | 对话轮次（一次问答的完整记录，含 Token 统计） | a | llm-agent |
+| `a_chat_history` | 消息历史（Spring AI ChatMemory 底层存储） | a | llm-agent |
+| `a_media_files` | 多模态对话附件（图片等媒体文件 URL） | a | llm-agent |
+| `a_mcp_servers` | MCP 服务器连接配置 | a | llm-agent |
+| `a_knowledge_bases` | RAG 知识库配置 | a | llm-agent |
+| `a_knowledge_documents` | 知识库文档（原始内容与处理状态） | a | llm-agent |
+| `a_graph_tasks` | Graph 工作流执行任务记录 | a | llm-agent |
+| `a_graph_steps` | Graph 节点执行步骤记录 | a | llm-agent |
+| `a_pending_reviews` | 人工审核待处理记录（Graph/ReactAgent 暂停点） | a | llm-agent |
 
-**基础字段**（所有表必备）：
+**基础字段**（所有表必备，由 `BaseEntity` 统一提供）：
 - `create_time` - 创建时间（自动填充）
 - `update_time` - 更新时间（自动填充）
 - `create_by` - 创建人（自动填充）
