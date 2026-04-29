@@ -4,7 +4,7 @@ import com.alibaba.cloud.ai.graph.agent.Builder;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
 import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
-import com.alibaba.cloud.ai.graph.skills.registry.classpath.ClasspathSkillRegistry;
+import com.alibaba.cloud.ai.graph.skills.registry.filesystem.FileSystemSkillRegistry;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import lombok.Getter;
@@ -12,7 +12,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -260,17 +266,22 @@ public class AgentWrapper {
             }
 
             // 构建 SkillsAgentHook（如果配置了 skills 路径）
+            // 使用 FileSystemSkillRegistry + PathMatchingResourcePatternResolver，
+            // 规避 Spring Boot fat JAR 的 nested: URL 协议（ClasspathSkillRegistry 不支持）
             SkillsAgentHook skillsHook = null;
             if (skillsClasspathPath != null && !skillsClasspathPath.isBlank()) {
                 try {
-                    SkillRegistry registry = ClasspathSkillRegistry.builder()
-                            .classpathPath(skillsClasspathPath)
+                    Path tempSkillsDir = extractSkillsToFilesystem(skillsClasspathPath);
+                    log.info("[AgentWrapper] Skills 已提取到临时目录: {}", tempSkillsDir);
+
+                    SkillRegistry registry = FileSystemSkillRegistry.builder()
+                            .userSkillsDirectory(tempSkillsDir.toString())
                             .autoLoad(true)
                             .build();
 
                     SkillsAgentHook.Builder hookBuilder = SkillsAgentHook.builder()
                             .skillRegistry(registry)
-                            .autoReload(true);
+                            .autoReload(false);
 
                     if (skillGroupedTools != null && !skillGroupedTools.isEmpty()) {
                         hookBuilder.groupedTools(skillGroupedTools);
@@ -282,7 +293,7 @@ public class AgentWrapper {
                             name, skillsClasspathPath, skillsHook.getSkillCount());
                 } catch (Exception e) {
                     log.warn("[AgentWrapper] Agent '{}' Skills 初始化失败，将在无 Skills 模式下运行: {}",
-                            name, e.getMessage());
+                            name, e.getMessage(), e);
                 }
             }
 
@@ -292,6 +303,50 @@ public class AgentWrapper {
                     name, (tools != null ? tools.size() : 0), (skillsHook != null ? skillsHook.getSkillCount() : 0));
 
             return new AgentWrapper(name, description, reactAgent, instruction, skillsHook);
+        }
+
+        /**
+         * 将 classpath 中的 SKILL.md 文件提取到临时文件系统目录。
+         * <p>
+         * ClasspathSkillRegistry 不支持 Spring Boot fat JAR 的 "nested:" URL 协议，
+         * 因此使用 PathMatchingResourcePatternResolver 枚举资源后写入临时目录，
+         * 再通过 FileSystemSkillRegistry 加载，完全规避协议限制。
+         *
+         * @param classpathPath classpath 下的技能根目录，例如 "skills"
+         * @return 包含所有 SKILL.md 的临时目录路径
+         */
+        private static Path extractSkillsToFilesystem(String classpathPath) throws IOException {
+            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+            // 匹配 classpath 内所有层级下的 SKILL.md（支持 fat JAR / nested JAR）
+            String pattern = "classpath*:" + classpathPath + "/**/SKILL.md";
+            Resource[] resources = resolver.getResources(pattern);
+
+            Path tempDir = Files.createTempDirectory("llm-agent-skills-");
+            log.info("[AgentWrapper] 扫描 Skills 资源: pattern={}, 发现 {} 个", pattern, resources.length);
+
+            for (Resource resource : resources) {
+                String urlStr = resource.getURL().toString();
+                // 从 URL 中提取 "<skillName>/SKILL.md" 相对路径
+                int idx = urlStr.lastIndexOf(classpathPath + "/");
+                if (idx < 0) {
+                    log.debug("[AgentWrapper] 无法提取相对路径，跳过: {}", urlStr);
+                    continue;
+                }
+                String relativePath = urlStr.substring(idx + classpathPath.length() + 1); // "skill-name/SKILL.md"
+                // 去掉可能的 URL 后缀（如 "!/..." 或 "?..."）
+                int sep = relativePath.indexOf('!');
+                if (sep >= 0) relativePath = relativePath.substring(0, sep);
+                sep = relativePath.indexOf('?');
+                if (sep >= 0) relativePath = relativePath.substring(0, sep);
+
+                Path target = tempDir.resolve(relativePath);
+                Files.createDirectories(target.getParent());
+                try (var in = resource.getInputStream()) {
+                    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                log.debug("[AgentWrapper] 已提取 Skill: {} -> {}", relativePath, target);
+            }
+            return tempDir;
         }
 
         private void validateParams() {
