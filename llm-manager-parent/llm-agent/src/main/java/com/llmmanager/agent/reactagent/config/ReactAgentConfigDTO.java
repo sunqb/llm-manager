@@ -54,6 +54,16 @@ public class ReactAgentConfigDTO {
      */
     private List<String> mcpToolNames;
 
+    // ==================== Skills 配置（可选） ====================
+
+    /**
+     * classpath 下的 skills 目录路径（可选）
+     * <p>
+     * 例如 "skills" 表示加载 src/main/resources/skills/ 下的所有技能。
+     * 为空则不启用 Skills 功能。
+     */
+    private String skillsPath;
+
     // ==================== SEQUENTIAL 类型配置 ====================
 
     /**

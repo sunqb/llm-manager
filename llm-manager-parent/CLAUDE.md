@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LLM Manager 是一个基于 Spring AI 的大语言模型管理平台，采用多模块 Maven 架构，支持多 LLM 提供商（OpenAI、Ollama、Azure OpenAI 等）的统一管理。
 
-**技术栈**: Spring Boot 3.2.5, Spring AI OpenAI 1.1.0-M4, Java 17+, MyBatis-Plus 3.5.7, MySQL/TiDB, Sa-Token 1.37.0
+**技术栈**: Spring Boot 3.2.5, Spring AI 1.1.2, Spring AI Alibaba 1.1.2.2, Java 17+, MyBatis-Plus 3.5.7, MySQL/TiDB, Sa-Token 1.37.0
 
 ## Build & Run Commands
 
@@ -3361,3 +3361,101 @@ ChatResponse chatResponse = client.chat("gpt-4", "你好");
    - 新建 `llm-manager-client` 模块
    - 发布 Maven 包
    - 完善 API 文档
+
+---
+
+## Skills 功能（v2.9.0）✅ 已实现
+
+### 版本升级
+
+| 依赖 | 旧版本 | 新版本 |
+|------|--------|--------|
+| `spring-ai` | 1.1.0 | **1.1.2** |
+| `spring-ai-alibaba` | 1.1.0.0-RC1 | **1.1.2.2** |
+
+### 概述
+
+Skills 功能允许为 ReactAgent 注入预定义的行为指南（Prompt），通过 Markdown 文件定义技能，运行时由 `SkillsAgentHook` 动态注入到 Agent 系统提示词中。
+
+参考文档：https://java2ai.com/docs/frameworks/agent-framework/tutorials/skills/
+
+### 核心组件
+
+| 组件 | 说明 |
+|------|------|
+| `ClasspathSkillRegistry` | 从 classpath 扫描加载 SKILL.md 文件 |
+| `SkillsAgentHook` | 在 Agent 执行前将 Skills 注入提示词 |
+| `AgentWrapper.Builder` | 新增 `skillsClasspathPath()` 方法 |
+| `ReactAgentConfigDTO` | 新增 `skillsPath` 字段（数据库配置） |
+
+### Skills 文件结构
+
+```
+llm-agent/src/main/resources/skills/
+├── general-assistant/
+│   └── SKILL.md
+├── code-reviewer/
+│   └── SKILL.md
+└── data-analyst/
+    └── SKILL.md
+```
+
+### SKILL.md 格式
+
+```markdown
+---
+name: skill-name
+description: 何时使用此技能的描述...
+---
+
+# 技能名称
+
+## 职责
+...
+
+## 行为准则
+...
+```
+
+### 使用方式
+
+#### 1. 在代码中直接指定（AgentWrapper）
+
+```java
+AgentWrapper agent = AgentWrapper.builder()
+    .name("my-agent")
+    .chatModel(chatModel)
+    .systemPrompt("你是一个助手")
+    .skillsClasspathPath("skills")  // 加载 classpath:skills/ 下所有技能
+    .build();
+```
+
+#### 2. 通过数据库配置（ReactAgentConfigDTO）
+
+在 `a_react_agents` 表的 `config` JSON 字段中设置：
+
+```json
+{
+  "agentType": "SINGLE",
+  "modelId": 1,
+  "skillsPath": "skills"
+}
+```
+
+#### 3. 查询 Agent 加载的技能
+
+```java
+AgentWrapper agent = ...;
+agent.hasSkills();          // 是否启用了 skills
+agent.getSkillsHook();      // 获取 SkillsAgentHook 实例
+agent.getSkillsHook().getSkillCount();   // 技能数量
+agent.getSkillsHook().listSkills();      // 列出所有技能名称
+```
+
+### 内置示例技能
+
+| 技能名 | 适用场景 |
+|--------|---------|
+| `general-assistant` | 通用问答、写作辅助、任务规划 |
+| `code-reviewer` | 代码审查、安全检测、性能优化建议 |
+| `data-analyst` | 数据分析、统计解读、业务洞察 |

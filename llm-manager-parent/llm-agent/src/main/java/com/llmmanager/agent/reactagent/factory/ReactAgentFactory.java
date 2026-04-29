@@ -91,13 +91,19 @@ public class ReactAgentFactory {
             );
             List<ToolCallback> tools = mergeToolCallbacks(localTools, mcpTools);
 
-            return AgentWrapper.builder()
+            AgentWrapper.AgentWrapperBuilder builder = AgentWrapper.builder()
                     .name(config.getName())
                     .description(config.getDescription())
                     .chatModel(chatModel)
                     .instruction(dto.getInstruction())
-                    .tools(tools)
-                    .build();
+                    .tools(tools);
+
+            // 集成 Skills（如果配置了 skillsPath）
+            if (dto.getSkillsPath() != null && !dto.getSkillsPath().isBlank()) {
+                builder.skillsClasspathPath(dto.getSkillsPath());
+            }
+
+            return builder.build();
         } catch (Exception e) {
             throw new RuntimeException("构建 SINGLE Agent 失败: " + config.getSlug(), e);
         }

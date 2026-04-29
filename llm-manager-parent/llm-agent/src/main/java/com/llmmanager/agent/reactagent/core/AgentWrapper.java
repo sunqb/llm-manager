@@ -2,6 +2,9 @@ package com.llmmanager.agent.reactagent.core;
 
 import com.alibaba.cloud.ai.graph.agent.Builder;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
+import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
+import com.alibaba.cloud.ai.graph.skills.registry.classpath.ClasspathSkillRegistry;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import lombok.Getter;
@@ -11,6 +14,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -49,12 +53,14 @@ public class AgentWrapper {
     private final String description;
     private final ReactAgent reactAgent;
     private final String instruction;
+    private final SkillsAgentHook skillsHook;
 
-    private AgentWrapper(String name, String description, ReactAgent reactAgent, String instruction) {
+    private AgentWrapper(String name, String description, ReactAgent reactAgent, String instruction, SkillsAgentHook skillsHook) {
         this.name = name;
         this.description = description;
         this.reactAgent = reactAgent;
         this.instruction = instruction;
+        this.skillsHook = skillsHook;
     }
 
     /**
@@ -121,6 +127,22 @@ public class AgentWrapper {
     }
 
     /**
+     * 获取 SkillsAgentHook（如果已启用 Skills）
+     *
+     * @return SkillsAgentHook，未启用时返回 null
+     */
+    public SkillsAgentHook getSkillsHook() {
+        return skillsHook;
+    }
+
+    /**
+     * 判断是否启用了 Skills
+     */
+    public boolean hasSkills() {
+        return skillsHook != null && skillsHook.getSkillCount() > 0;
+    }
+
+    /**
      * 创建 Builder
      * 
      * @return AgentWrapperBuilder
@@ -140,6 +162,10 @@ public class AgentWrapper {
         private String systemPrompt;
         private List<ToolCallback> tools;
         private Object[] methodTools;
+        /** classpath 下的 skills 目录路径，例如 "skills"；为 null 表示不启用 Skills */
+        private String skillsClasspathPath;
+        /** 按技能名称分组的工具映射，用于技能绑定工具（可选） */
+        private Map<String, List<ToolCallback>> skillGroupedTools;
 
         public AgentWrapperBuilder name(String name) {
             this.name = name;
@@ -180,6 +206,26 @@ public class AgentWrapper {
             return this;
         }
 
+        /**
+         * 启用 Skills 功能（ClasspathSkillRegistry）
+         *
+         * @param classpathPath classpath 下的 skills 目录，例如 "skills"
+         */
+        public AgentWrapperBuilder skillsClasspathPath(String classpathPath) {
+            this.skillsClasspathPath = classpathPath;
+            return this;
+        }
+
+        /**
+         * 按技能名称分组的工具映射（可选）
+         * key = skill 的 name（与 SKILL.md frontmatter 中 name 对应）
+         * value = 该技能可用的工具列表
+         */
+        public AgentWrapperBuilder skillGroupedTools(Map<String, List<ToolCallback>> groupedTools) {
+            this.skillGroupedTools = groupedTools;
+            return this;
+        }
+
         public AgentWrapper build() {
             validateParams();
 
@@ -213,12 +259,39 @@ public class AgentWrapper {
                 agentBuilder.methodTools(methodTools);
             }
 
+            // 构建 SkillsAgentHook（如果配置了 skills 路径）
+            SkillsAgentHook skillsHook = null;
+            if (skillsClasspathPath != null && !skillsClasspathPath.isBlank()) {
+                try {
+                    SkillRegistry registry = ClasspathSkillRegistry.builder()
+                            .classpathPath(skillsClasspathPath)
+                            .autoLoad(true)
+                            .build();
+
+                    SkillsAgentHook.Builder hookBuilder = SkillsAgentHook.builder()
+                            .skillRegistry(registry)
+                            .autoReload(true);
+
+                    if (skillGroupedTools != null && !skillGroupedTools.isEmpty()) {
+                        hookBuilder.groupedTools(skillGroupedTools);
+                    }
+
+                    skillsHook = hookBuilder.build();
+                    agentBuilder.hooks(List.of(skillsHook));
+                    log.info("[AgentWrapper] Agent '{}' 启用 Skills, 路径: {}, 技能数: {}",
+                            name, skillsClasspathPath, skillsHook.getSkillCount());
+                } catch (Exception e) {
+                    log.warn("[AgentWrapper] Agent '{}' Skills 初始化失败，将在无 Skills 模式下运行: {}",
+                            name, e.getMessage());
+                }
+            }
+
             ReactAgent reactAgent = agentBuilder.build();
 
-            log.info("[AgentWrapper] 构建 Agent '{}' 完成, 工具数量: {}",
-                    name, (tools != null ? tools.size() : 0));
+            log.info("[AgentWrapper] 构建 Agent '{}' 完成, 工具数量: {}, Skills: {}",
+                    name, (tools != null ? tools.size() : 0), (skillsHook != null ? skillsHook.getSkillCount() : 0));
 
-            return new AgentWrapper(name, description, reactAgent, instruction);
+            return new AgentWrapper(name, description, reactAgent, instruction, skillsHook);
         }
 
         private void validateParams() {
