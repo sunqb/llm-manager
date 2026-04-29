@@ -17,6 +17,11 @@ LLM Manager 是一个现代化的 LLM 管理系统，旨在简化大语言模型
 - **Markdown 渲染**：完整支持 Markdown 格式，包括代码高亮、表格、列表等
 - **API Key 管理**：为外部应用提供安全的 API 访问
 - **用户认证**：基于 Sa-Token 的安全认证机制
+- **Graph 工作流**：支持硬编码和 JSON 动态配置的工作流编排（DeepResearch 等）
+- **ReactAgent 框架**：基于 Spring AI Alibaba 的智能体，支持 SINGLE / SEQUENTIAL / SUPERVISOR 三种模式
+- **MCP 集成**：支持 Model Context Protocol，连接外部工具服务器
+- **RAG 知识库**：向量检索增强生成，支持 SimpleVectorStore 和 Milvus
+- **人工审核（Human Review）**：Agent 可主动提交审核，批准后自动恢复执行，支持跨服务重启持久化
 
 ## 技术栈
 
@@ -546,6 +551,30 @@ npm install marked dompurify
 - 功能建议：提交 Feature Request
 
 ## 更新日志
+
+### v2.8.0 (2026-04-29) 🔒
+
+**人工审核功能 - 跨服务重启持久化恢复**
+
+#### 🆕 新增功能
+
+**人工审核全链路打通**
+- **HumanReviewTool**：ReactAgent 可主动调用 `requestHumanReview` 工具提交内容审核
+- **审核记录持久化**：审核上下文（`originalTask`、`submittedContent`、`modelId`）完整写入数据库 `context_data` 字段
+- **跨重启恢复执行**：服务重启后批准审核，Agent 可从数据库读取完整上下文并继续执行
+- **HumanReviewContext 扩展**：新增 `originalTask`、`modelId` 字段，恢复执行时无需依赖内存状态
+
+#### 🐛 Bug 修复
+
+- **`@Select` 不走 `autoResultMap` 问题**：`PendingReviewServiceImpl.findByReviewCode()` 改用 `LambdaQueryWrapper`，确保 JSON 字段 `contextData` 被正确反序列化（MyBatis-Plus `autoResultMap` 对自定义 `@Select` 注解不生效）
+
+#### ✅ 验证场景
+
+```
+触发审核（服务运行中）→ 停止服务 → 重启服务 → 批准审核 → Agent 成功恢复执行
+```
+
+---
 
 
 ### v2.7.0 (2025-12-25) 🔧

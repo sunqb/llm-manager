@@ -8,6 +8,9 @@ import com.llmmanager.agent.reactagent.configurable.config.AgentWorkflowConfig;
 import com.llmmanager.agent.reactagent.configurable.pattern.WorkflowResult;
 import com.llmmanager.agent.reactagent.core.AgentWrapper;
 import com.llmmanager.agent.reactagent.registry.ToolRegistry;
+import com.llmmanager.agent.review.context.HumanReviewContext;
+import com.llmmanager.agent.review.context.HumanReviewContextHolder;
+import com.llmmanager.agent.review.exception.HumanReviewRequiredException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.tool.ToolCallback;
@@ -17,6 +20,7 @@ import javax.annotation.Resource;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * ReactAgent 执行服务
@@ -56,17 +60,98 @@ public class ReactAgentExecutionService {
      * @return 执行结果
      */
     public Map<String, Object> executeAgent(AgentWrapper agent, String message) {
+        return executeAgent(agent, message, null, null);
+    }
+
+    /**
+     * 执行单个 Agent（带 modelId，用于 single/modelId 路径）
+     */
+    public Map<String, Object> executeAgent(AgentWrapper agent, String message,
+                                            String conversationCode, String agentConfigCode,
+                                            Long modelId) {
         Map<String, Object> response = new HashMap<>();
+        String convCode = conversationCode != null ? conversationCode
+                : UUID.randomUUID().toString().replace("-", "");
+        HumanReviewContextHolder.setContext(HumanReviewContext.builder()
+                .conversationCode(convCode)
+                .agentConfigCode(agentConfigCode)
+                .agentName(agent.getName())
+                .agentType("SINGLE")
+                .originalTask(message)
+                .modelId(modelId)
+                .build());
         try {
             String result = agent.call(message);
             response.put("success", true);
             response.put("result", result);
             response.put("agentName", agent.getName());
             response.put("agentType", "SINGLE");
+        } catch (HumanReviewRequiredException e) {
+            log.info("[ReactAgentExecution] Agent 请求人工审核: {}, reviewCode: {}",
+                    agent.getName(), e.getReviewCode());
+            response.put("success", false);
+            response.put("pendingReview", true);
+            response.put("reviewCode", e.getReviewCode());
+            response.put("reviewPrompt", e.getReviewPrompt());
+            response.put("agentName", agent.getName());
+            response.put("agentType", "SINGLE");
+            response.put("message", "Agent 执行已暂停，等待人工审核。reviewCode: " + e.getReviewCode());
         } catch (Exception e) {
             log.error("[ReactAgentExecution] Agent 执行失败: {}", agent.getName(), e);
             response.put("success", false);
             response.put("error", e.getMessage());
+        } finally {
+            HumanReviewContextHolder.clear();
+        }
+        return response;
+    }
+
+    /**
+     * 执行单个 Agent（带会话上下文，支持人工审核）
+     *
+     * @param agent            AgentWrapper 实例
+     * @param message          用户消息
+     * @param conversationCode 会话标识（用于人工审核）
+     * @param agentConfigCode  Agent 配置 Code
+     * @return 执行结果
+     */
+    public Map<String, Object> executeAgent(AgentWrapper agent, String message,
+                                            String conversationCode, String agentConfigCode) {
+        Map<String, Object> response = new HashMap<>();
+
+        // 设置人工审核上下文
+        String convCode = conversationCode != null ? conversationCode
+                : UUID.randomUUID().toString().replace("-", "");
+        HumanReviewContextHolder.setContext(HumanReviewContext.builder()
+                .conversationCode(convCode)
+                .agentConfigCode(agentConfigCode)
+                .agentName(agent.getName())
+                .agentType("SINGLE")
+                .originalTask(message)
+                .build());
+
+        try {
+            String result = agent.call(message);
+            response.put("success", true);
+            response.put("result", result);
+            response.put("agentName", agent.getName());
+            response.put("agentType", "SINGLE");
+        } catch (HumanReviewRequiredException e) {
+            log.info("[ReactAgentExecution] Agent 请求人工审核: {}, reviewCode: {}",
+                    agent.getName(), e.getReviewCode());
+            response.put("success", false);
+            response.put("pendingReview", true);
+            response.put("reviewCode", e.getReviewCode());
+            response.put("reviewPrompt", e.getReviewPrompt());
+            response.put("agentName", agent.getName());
+            response.put("agentType", "SINGLE");
+            response.put("message", "Agent 执行已暂停，等待人工审核。reviewCode: " + e.getReviewCode());
+        } catch (Exception e) {
+            log.error("[ReactAgentExecution] Agent 执行失败: {}", agent.getName(), e);
+            response.put("success", false);
+            response.put("error", e.getMessage());
+        } finally {
+            HumanReviewContextHolder.clear();
         }
         return response;
     }
@@ -147,8 +232,8 @@ public class ReactAgentExecutionService {
                 .tools(tools)
                 .build();
 
-        // 使用公共执行方法
-        return executeAgent(agent, message);
+        // 使用公共执行方法（自动生成会话 code，支持人工审核）
+        return executeAgent(agent, message, null, null, modelId);
     }
 
     /**

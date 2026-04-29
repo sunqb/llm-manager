@@ -2369,6 +2369,398 @@ llm-agent/src/main/java/com/llmmanager/agent/reactagent/
 - ✅ Vector Store（RAG 支持）已实现
 - ✅ ReactAgent 智能体已实现（基于 `spring-ai-alibaba-agent-framework:1.1.0.0-RC1`）
 - ✅ 多 Agent 协作已实现（ConfigurableAgentWorkflow + SupervisorAgentTeam）
+- ✅ 人工审核功能已实现（Graph + ReactAgent 双层支持）
+
+---
+
+## 人工审核功能（Human Review）✅ 已实现
+
+### 概述
+
+人工审核功能为 LLM Manager 系统提供了在关键节点暂停执行、等待人工确认的能力。支持：
+
+1. **Graph 工作流审核**：通过 `HUMAN_REVIEW_NODE` 节点暂停工作流
+2. **ReactAgent 审核**：通过 `HumanReviewTool` 工具让 Agent 主动请求审核
+3. **ReactAgent 作为 Graph 节点**：通过 `REACT_AGENT_NODE` 在工作流中调用 Agent
+4. **两层审核**：支持 Graph 级别 + Agent 内部审核的组合
+
+### 核心设计
+
+#### 异常驱动暂停机制
+
+统一使用 `HumanReviewRequiredException` 暂停执行：
+
+```java
+// 抛出异常暂停执行
+throw new HumanReviewRequiredException(
+    reviewCode,      // 审核唯一标识
+    reviewPrompt,    // 审核提示内容
+    reviewType       // 审核类型：GRAPH_NODE / REACT_AGENT_TOOL
+);
+```
+
+#### 审核类型
+
+| 类型 | 说明 | 触发方式 |
+|------|------|---------|
+| `GRAPH_NODE` | Graph 工作流节点审核 | `HUMAN_REVIEW_NODE` 节点 |
+| `REACT_AGENT_TOOL` | ReactAgent 工具审核 | `HumanReviewTool` 调用 |
+| `REACT_AGENT_SEQUENTIAL` | SEQUENTIAL 工作流审核 | Agent 间审核（待实现） |
+| `REACT_AGENT_SUPERVISOR` | SUPERVISOR 团队审核 | Worker 审核（待实现） |
+
+### 核心组件
+
+#### 1. 数据层
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `PendingReview` | storage/core/entity/ | 审核记录实体 |
+| `PendingReviewMapper` | storage/core/mapper/ | MyBatis Mapper |
+| `PendingReviewService` | storage/core/service/ | CRUD 服务 |
+
+#### 2. 审核服务
+
+**llm-agent 层（记录创建）**：
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `HumanReviewRecordService` | review/ | 创建审核记录（4种类型） |
+| `HumanReviewRequiredException` | review/exception/ | 审核异常（暂停执行） |
+| `GraphStateSnapshot` | review/snapshot/ | Graph 状态快照 |
+| `HumanReviewContext` | review/context/ | 审核上下文数据 |
+| `HumanReviewContextHolder` | review/context/ | ThreadLocal 上下文持有器 |
+
+**llm-service 层（流程编排）**：
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `HumanReviewOrchestrationService` | orchestration/ | 审核流程编排（批准/拒绝/恢复执行） |
+
+#### 3. Graph 节点执行器
+
+**llm-agent 层**：
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `HumanReviewNodeExecutor` | graph/dynamic/executor/ | 人工审核节点 |
+
+**llm-service 层**（需要直接调用业务服务）：
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `ReactAgentNodeExecutor` | orchestration/executor/ | ReactAgent 作为节点，直接注入 DynamicReactAgentExecutionService |
+
+#### 4. ReactAgent 工具
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `HumanReviewTool` | tools/ | Spring AI @Tool 注解的审核工具 |
+
+#### 5. REST API
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| `HumanReviewController` | llm-ops/.../controller/ | 审核管理 API |
+
+### 包结构
+
+```
+llm-agent/src/main/java/com/llmmanager/agent/
+├── review/                                # 审核模块
+│   ├── HumanReviewRecordService.java     # 创建审核记录（仅记录创建，不涉及恢复执行）
+│   ├── exception/
+│   │   └── HumanReviewRequiredException.java  # 审核异常
+│   ├── context/
+│   │   ├── HumanReviewContext.java       # 上下文数据
+│   │   └── HumanReviewContextHolder.java # ThreadLocal 持有器
+│   ├── snapshot/
+│   │   ├── GraphStateSnapshot.java       # Graph 状态快照
+│   │   ├── SequentialStateSnapshot.java  # Sequential 快照
+│   │   └── SupervisorStateSnapshot.java  # Supervisor 快照
+│   └── dto/
+│       ├── PendingReviewVO.java
+│       ├── ReviewSubmitRequest.java
+│       └── ReviewRejectRequest.java
+├── graph/dynamic/executor/
+│   └── HumanReviewNodeExecutor.java      # 审核节点执行器
+├── storage/core/
+│   ├── entity/PendingReview.java         # 审核记录实体
+│   ├── mapper/PendingReviewMapper.java
+│   └── service/PendingReviewService.java
+└── tools/
+    └── HumanReviewTool.java              # Agent 审核工具
+
+llm-service/src/main/java/com/llmmanager/service/orchestration/
+├── HumanReviewOrchestrationService.java  # 审核流程编排（批准/拒绝/恢复执行）
+└── executor/
+    └── ReactAgentNodeExecutor.java       # ReactAgent 节点执行器（直接注入业务服务）
+
+llm-ops/src/main/java/com/llmmanager/ops/controller/
+└── HumanReviewController.java            # 审核 REST API
+```
+
+### 架构设计
+
+#### 层级职责清晰
+
+```
+重构后的架构：
+
+llm-agent (底层能力层)
+├── storage/core/service/PendingReviewService  # 基础 CRUD
+└── review/
+    ├── HumanReviewRecordService               # 仅创建审核记录
+    │     ├── createGraphNodeReview()
+    │     ├── createReactAgentToolReview()
+    │     ├── createSequentialReview()
+    │     └── createSupervisorReview()
+    ├── exception/HumanReviewRequiredException
+    ├── context/*
+    └── snapshot/*
+
+llm-service (业务编排层)
+└── orchestration/HumanReviewOrchestrationService
+      ├── approveReview()                      # 批准审核
+      ├── rejectReview()                       # 拒绝审核
+      ├── resumeExecutionAsync()               # 异步恢复执行
+      ├── 直接注入 PendingReviewService        # 基础 CRUD
+      ├── 直接注入 DynamicReactAgentExecutionService  # 恢复 ReactAgent
+      └── 直接注入 GraphWorkflowExecutor       # 恢复 Graph
+```
+
+**设计原则**：
+- **单一职责**：llm-agent 只负责创建记录，不涉及恢复执行
+- **层级清晰**：llm-service 层可以直接依赖其他 service 层服务
+- **无需依赖倒置**：避免 service 层实现 agent 层接口的反直觉设计
+
+### 可用节点类型
+
+| 节点类型 | 说明 | 配置参数 |
+|---------|------|---------|
+| `HUMAN_REVIEW_NODE` | 人工审核节点 | `prompt_template`, `context_keys`, `output_key` |
+| `REACT_AGENT_NODE` | ReactAgent 作为节点 | `agent_ref`, `input_key`, `output_key` |
+
+### API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `GET /api/human-review/pending` | GET | 获取待审核列表 |
+| `GET /api/human-review/{reviewCode}` | GET | 获取审核详情 |
+| `POST /api/human-review/submit/{reviewCode}` | POST | 提交审核结果 |
+| `POST /api/human-review/approve/{reviewCode}` | POST | 批准审核 |
+| `POST /api/human-review/reject/{reviewCode}` | POST | 拒绝审核 |
+| `GET /api/human-review/count/pending` | GET | 统计待审核数量 |
+
+### 配置示例
+
+#### 1. Graph 工作流审核
+
+```json
+{
+  "name": "research-with-review",
+  "nodes": [
+    {
+      "id": "research",
+      "type": "LLM_NODE",
+      "config": {
+        "input_key": "question",
+        "output_key": "research_result"
+      }
+    },
+    {
+      "id": "human_review",
+      "type": "HUMAN_REVIEW_NODE",
+      "config": {
+        "prompt_template": "请审核以下研究结果：\n\n{research_result}",
+        "context_keys": ["research_result"],
+        "output_key": "review_result",
+        "timeout_seconds": 3600
+      }
+    },
+    {
+      "id": "finalize",
+      "type": "LLM_NODE",
+      "config": {
+        "input_key": "research_result",
+        "output_key": "final_answer"
+      }
+    }
+  ],
+  "edges": [
+    {"from": "START", "to": "research"},
+    {"from": "research", "to": "human_review"},
+    {
+      "from": "human_review",
+      "to": "finalize",
+      "type": "CONDITIONAL",
+      "condition_field": "review_result",
+      "routes": {
+        "APPROVED": "finalize",
+        "REJECTED": "END"
+      }
+    },
+    {"from": "finalize", "to": "END"}
+  ]
+}
+```
+
+#### 2. Graph + ReactAgent 两层审核
+
+```json
+{
+  "name": "complex-research",
+  "nodes": [
+    {
+      "id": "agent_research",
+      "type": "REACT_AGENT_NODE",
+      "config": {
+        "agent_ref": "researcher",
+        "input_key": "topic",
+        "output_key": "research_data"
+      }
+    },
+    {
+      "id": "workflow_review",
+      "type": "HUMAN_REVIEW_NODE",
+      "config": {
+        "prompt_template": "智能体研究结果：\n\n{research_data}\n\n是否批准发布？",
+        "context_keys": ["research_data"],
+        "output_key": "workflow_review_result"
+      }
+    }
+  ],
+  "edges": [
+    {"from": "START", "to": "agent_research"},
+    {"from": "agent_research", "to": "workflow_review"},
+    {
+      "from": "workflow_review",
+      "to": "END",
+      "type": "CONDITIONAL",
+      "condition_field": "workflow_review_result",
+      "routes": {
+        "APPROVED": "END",
+        "REJECTED": "END"
+      }
+    }
+  ]
+}
+```
+
+### 使用示例
+
+#### 1. HumanReviewTool（Agent 内部调用）
+
+LLM 可以自主决定何时调用审核工具：
+
+```java
+// 工具定义（已内置）
+@Tool(description = "请求人工审核 - 当需要人工确认或批准某些内容时使用")
+public String requestHumanReview(
+    @ToolParam(description = "需要审核的内容") String content,
+    @ToolParam(description = "审核提示") String prompt);
+```
+
+Agent 会在需要时自动调用：
+- 生成重要报告需要确认
+- 敏感操作需要批准
+- 复杂分析结果需要验证
+
+#### 2. 审核流程
+
+```
+1. 创建审核 → 抛出 HumanReviewRequiredException → 执行暂停
+2. 前端获取待审核列表 → 展示审核内容
+3. 用户批准/拒绝 → 调用 /api/human-review/submit/{reviewCode}
+4. 批准后异步恢复执行 → HumanReviewOrchestrationService.resumeExecutionAsync()
+```
+
+#### 3. API 调用示例
+
+```bash
+# 获取待审核列表
+curl http://localhost:8080/api/human-review/pending
+
+# 获取审核详情
+curl http://localhost:8080/api/human-review/{reviewCode}
+
+# 批准审核
+curl -X POST http://localhost:8080/api/human-review/approve/{reviewCode} \
+  -d "reviewComment=内容正确，批准发布"
+
+# 拒绝审核
+curl -X POST http://localhost:8080/api/human-review/reject/{reviewCode} \
+  -H "Content-Type: application/json" \
+  -d '{"rejectReason": "数据不准确，需要修改"}'
+```
+
+### 数据库表结构
+
+```sql
+CREATE TABLE IF NOT EXISTS a_pending_reviews (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    review_code VARCHAR(32) NOT NULL UNIQUE COMMENT '审核唯一标识',
+    review_type VARCHAR(50) NOT NULL COMMENT '审核类型',
+    graph_task_id BIGINT COMMENT 'Graph 任务 ID',
+    conversation_code VARCHAR(100) COMMENT '会话标识',
+    agent_config_code VARCHAR(32) COMMENT 'Agent 配置 Code',
+    current_node VARCHAR(100) COMMENT '当前节点名称',
+    reviewer_prompt TEXT NOT NULL COMMENT '审核提示',
+    context_data JSON NOT NULL COMMENT '状态快照',
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '状态',
+    review_result TINYINT(1) COMMENT '审核结果',
+    review_comment TEXT COMMENT '审核意见',
+    reviewer_id BIGINT COMMENT '审核人 ID',
+    reviewed_at DATETIME COMMENT '审核时间',
+    resume_after_approval TINYINT(1) DEFAULT 1 COMMENT '批准后自动恢复',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_delete TINYINT DEFAULT 0,
+    INDEX idx_review_code (review_code),
+    INDEX idx_status_create (status, create_time)
+);
+```
+
+#### 恢复执行流程
+
+```
+审核批准
+    ↓
+HumanReviewOrchestrationService.approveReview()
+    ↓
+HumanReviewOrchestrationService.resumeExecutionAsync() (@Async)
+    ↓
+根据 reviewType 路由:
+├── GRAPH_NODE → GraphWorkflowExecutor.resumeFromReview()
+├── REACT_AGENT_TOOL → DynamicReactAgentExecutionService.resumeFromReview()
+├── REACT_AGENT_SEQUENTIAL → (待实现)
+└── REACT_AGENT_SUPERVISOR → (待实现)
+```
+
+#### 已修复 Bug：`@Select` 注解不走 `autoResultMap`
+
+**问题**：`PendingReviewMapper` 中使用 `@Select("SELECT * FROM ...")` 自定义查询时，MyBatis-Plus 的 `@TableName(autoResultMap = true)` 不对其生效，导致 `contextData`（JSON 字段）读出来始终为 `null`，进而审核批准后恢复执行时无法获取 `originalTask` 和 `modelId`。
+
+**修复**：`PendingReviewServiceImpl.findByReviewCode()` 改为使用 `LambdaQueryWrapper`，走 MyBatis-Plus 自动生成查询，`autoResultMap` 正确生效：
+
+```java
+// PendingReviewServiceImpl.java
+@Override
+public Optional<PendingReview> findByReviewCode(String reviewCode) {
+    // 使用 LambdaQueryWrapper 而非 @Select，确保 autoResultMap 生效（正确反序列化 contextData JSON 字段）
+    PendingReview review = pendingReviewMapper.selectOne(
+            new LambdaQueryWrapper<PendingReview>()
+                    .eq(PendingReview::getReviewCode, reviewCode)
+                    .eq(PendingReview::getIsDelete, 0)
+    );
+    return Optional.ofNullable(review);
+}
+```
+
+**已验证场景**：触发审核 → 停止服务 → 重启服务 → 批准审核 → Agent 成功从数据库恢复上下文并继续执行（跨服务重启持久化验证通过）。
+
+#### HumanReviewContext 扩展字段
+
+`HumanReviewContext` 新增了 `originalTask`（原始任务）和 `modelId`（模型 ID）字段，由 `HumanReviewTool.buildContextData()` 在工具调用时写入，存入数据库 `context_data` JSON 列。恢复执行时从中读取，无需依赖内存状态，支持跨服务重启恢复。
 
 ---
 

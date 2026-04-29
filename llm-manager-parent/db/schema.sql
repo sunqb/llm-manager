@@ -492,3 +492,53 @@ CREATE TABLE IF NOT EXISTS p_react_agent (
     INDEX idx_is_active (is_active),
     INDEX idx_is_delete (is_delete)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ReactAgent 配置表';
+
+-- =============================================
+-- 人工审核功能相关表
+-- =============================================
+
+-- 人工审核记录表
+CREATE TABLE IF NOT EXISTS a_pending_reviews (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    review_code VARCHAR(32) NOT NULL UNIQUE COMMENT '审核唯一标识（32位UUID，无连字符）',
+    review_type VARCHAR(50) NOT NULL COMMENT '审核类型：GRAPH_NODE/REACT_AGENT_TOOL/REACT_AGENT_SEQUENTIAL/REACT_AGENT_SUPERVISOR',
+
+    -- 关联任务/会话
+    graph_task_id BIGINT COMMENT '关联的 Graph 任务 ID（a_graph_tasks 表）',
+    conversation_code VARCHAR(100) COMMENT '关联的会话标识（a_conversations 表）',
+    agent_config_code VARCHAR(32) COMMENT '关联的 Agent 配置 Code（p_react_agent 表）',
+
+    -- 审核上下文
+    current_node VARCHAR(100) COMMENT '当前节点/Agent 名称',
+    reviewer_prompt TEXT NOT NULL COMMENT '展示给审核人的提示内容',
+    context_keys JSON COMMENT '上下文字段列表（如 ["content", "analysis"]）',
+    context_data JSON NOT NULL COMMENT '上下文数据（状态快照，JSON 格式）',
+
+    -- 审核状态
+    status VARCHAR(20) DEFAULT 'PENDING' COMMENT '状态：PENDING（待审核）/APPROVED（已批准）/REJECTED（已拒绝）',
+    review_result TINYINT(1) COMMENT '审核结果：1=通过，0=拒绝，NULL=待审核',
+    review_comment TEXT COMMENT '审核意见/拒绝原因',
+    reviewer_id BIGINT COMMENT '审核人 ID（关联 user 表）',
+    reviewed_at DATETIME COMMENT '审核时间',
+
+    -- 执行控制
+    resume_after_approval TINYINT(1) DEFAULT 1 COMMENT '批准后是否自动恢复执行：1=是，0=否',
+    max_retry_count INT DEFAULT 3 COMMENT '最大重试次数（恢复执行失败时）',
+    current_retry_count INT DEFAULT 0 COMMENT '当前重试次数',
+
+    -- 标准字段
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    create_by VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    update_by VARCHAR(64) DEFAULT NULL COMMENT '更新人',
+    is_delete TINYINT(3) UNSIGNED DEFAULT 0 COMMENT '是否删除，0：正常，1：删除',
+
+    INDEX idx_review_code (review_code),
+    INDEX idx_review_type (review_type),
+    INDEX idx_status (status),
+    INDEX idx_create_time (create_time),
+    INDEX idx_graph_task_id (graph_task_id),
+    INDEX idx_conversation_code (conversation_code),
+    INDEX idx_reviewer_id (reviewer_id),
+    INDEX idx_is_delete (is_delete)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人工审核记录表';
