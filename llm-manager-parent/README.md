@@ -220,6 +220,7 @@ erDiagram
     %% Graph 运行时关系
     P_GRAPH_WORKFLOWS ||--o{ A_GRAPH_TASKS : runs
     A_GRAPH_TASKS ||--o{ A_GRAPH_STEPS : has
+    P_GRAPH_NODE_TYPES ||--o{ P_GRAPH_WORKFLOWS : defines
 
     %% RAG 关系
     A_KNOWLEDGE_BASES ||--o{ A_KNOWLEDGE_DOCUMENTS : contains
@@ -279,6 +280,16 @@ erDiagram
         varchar workflow_type
         bigint llm_model_id FK
         text graph_config
+        tinyint is_active
+    }
+    P_GRAPH_NODE_TYPES {
+        bigint id PK
+        varchar type_code UK
+        varchar type_name
+        text description
+        text config_schema
+        varchar executor_bean_name
+        tinyint is_system
         tinyint is_active
     }
     P_PROMPT {
@@ -419,7 +430,7 @@ erDiagram
 - `p_*` - 业务配置表（持久化配置数据，llm-service 模块为主）
 - `a_*` - Agent 运行时表（对话、任务等动态数据，llm-agent 模块为主）
 
-**完整表清单（共 18 张）**：
+**完整表清单（共 19 张）**：
 
 | 表名 | 说明 | 前缀 | 模块 |
 |------|------|------|------|
@@ -429,6 +440,7 @@ erDiagram
 | `p_agents` | 传统 Agent 配置（系统提示词） | p | llm-service |
 | `p_react_agent` | ReactAgent 配置（SINGLE/SEQUENTIAL/SUPERVISOR） | p | llm-agent |
 | `p_graph_workflows` | Graph 工作流配置（JSON 节点图） | p | llm-agent |
+| `p_graph_node_types` | Graph 节点类型注册表（系统内置节点定义） | p | llm-agent |
 | `p_prompt` | 提示词模板 | p | llm-service |
 | `p_api_key` | 外部 API 访问密钥 | p | llm-service |
 | `a_conversations` | 会话元数据（标题、统计信息） | a | llm-agent |
